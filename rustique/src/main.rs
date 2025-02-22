@@ -1,9 +1,17 @@
 use std::borrow::Cow;
 use winit::{
-    event::{Event, WindowEvent},
+    event::{Event, WindowEvent, MouseButton,},
     event_loop::EventLoop,
     window::Window,
+    dpi::PhysicalPosition, // Add this import
+    
 };
+
+struct State {
+    mouse_pos: PhysicalPosition<f64>,
+    pixels: Vec<u8>,
+    buffer_dimensions: (u32, u32),
+}
 
 async fn run(event_loop: EventLoop<()>, window: Window) {
     let mut size = window.inner_size();
@@ -63,12 +71,14 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             buffers: &[],
             compilation_options: Default::default(),
         },
+        
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: Some("fs_main"),
             compilation_options: Default::default(),
             targets: &[Some(swapchain_format.into())],
         }),
+
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
@@ -82,25 +92,51 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     surface.configure(&device, &config);
 
     let window = &window;
-    event_loop
-        .run(move |event, target| {
-            // Have the closure take ownership of the resources.
-            // `event_loop.run` never returns, therefore we must do this to ensure
-            // the resources are properly cleaned up.
-            let _ = (&instance, &adapter, &shader, &pipeline_layout);
+    let mut state = State {
+        mouse_pos: PhysicalPosition::new(0.0, 0.0),
+        pixels: vec![255; (size.width * size.height * 4) as usize],
+    buffer_dimensions: (size.width, size.height),
+    };
 
-            if let Event::WindowEvent {
-                window_id: _,
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Pixel Buffer"),
+        size: wgpu::Extent3d {
+            width: size.width,
+            height: size.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+
+    event_loop
+    .run(move |event, target| {
+        let _ = (&instance, &adapter, &shader, &pipeline_layout);
+
+        match event {
+            Event::WindowEvent { 
+                window_id,
                 event,
-            } = event
-            {
+            } => {
                 match event {
+                    WindowEvent::CursorMoved { position, .. } => {
+                        state.mouse_pos = position;
+                        window.set_title(&format!(
+                            "Mouse Position: ({:.1}, {:.1})",
+                            position.x,
+                            position.y
+                        ));
+                        window.request_redraw();
+                    }
                     WindowEvent::Resized(new_size) => {
-                        // Reconfigure the surface with the new size
+                        size = new_size;
                         config.width = new_size.width.max(1);
                         config.height = new_size.height.max(1);
                         surface.configure(&device, &config);
-                        // On macos the window needs to be redrawn manually after resizing
                         window.request_redraw();
                     }
                     WindowEvent::RedrawRequested => {
@@ -122,7 +158,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                         view: &view,
                                         resolve_target: None,
                                         ops: wgpu::Operations {
-                                            load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+                                            load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                                             store: wgpu::StoreOp::Store,
                                         },
                                     })],
@@ -130,20 +166,58 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                     timestamp_writes: None,
                                     occlusion_query_set: None,
                                 });
+
+                            // Draw a small point at the mouse position
                             rpass.set_pipeline(&render_pipeline);
-                            rpass.draw(0..3, 0..1);
+                            rpass.draw(0..0, 0..0);
                         }
 
                         queue.submit(Some(encoder.finish()));
                         frame.present();
                     }
+                    WindowEvent::MouseInput {
+                        state: winit::event::ElementState::Pressed,
+                        button: MouseButton::Left,
+                        ..
+                    } => {
+                        let x = state.mouse_pos.x as u32;
+                        let y = state.mouse_pos.y as u32;
+                        if x < state.buffer_dimensions.0 && y < state.buffer_dimensions.1 {
+                            let idx = ((y * state.buffer_dimensions.0 + x) * 4) as usize;
+                            state.pixels[idx..idx + 4].copy_from_slice(&[0, 0, 0, 255]); // Black pixel
+                            
+                            // Update texture with new pixel data
+                            queue.write_texture(
+                                wgpu::ImageCopyTexture {
+                                    texture: &texture,
+                                    mip_level: 0,
+                                    origin: wgpu::Origin3d { x, y, z: 0 },
+                                    aspect: wgpu::TextureAspect::All,
+                                },
+                                &[0, 0, 0, 255],
+                                wgpu::ImageDataLayout {
+                                    offset: 0,
+                                    bytes_per_row: Some(4),
+                                    rows_per_image: Some(1),
+                                },
+                                wgpu::Extent3d {
+                                    width: 1,
+                                    height: 1,
+                                    depth_or_array_layers: 1,
+                                },
+                            );
+                            window.request_redraw();
+                        }
+                    },
                     WindowEvent::CloseRequested => target.exit(),
                     _ => {}
-                };
+                }
             }
-        })
-        .unwrap();
-}
+            // Handle other event types if needed
+            _ => {}
+        }
+    })
+    .unwrap();} 
 
 pub fn main() {
     let event_loop = EventLoop::new().unwrap();
