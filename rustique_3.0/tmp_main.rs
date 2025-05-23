@@ -15,7 +15,7 @@ use serde::{Serialize, Deserialize};
 
 use main_menu::MainMenu;
 use localization::{Language, get_text};
-use brush_system::BrushManager;
+use brush_system::{BrushManager, BrushProperties, BrushType};
 
 // Constants
 const MAX_UNDO_STEPS: usize = 20;
@@ -103,7 +103,7 @@ struct Layer {
 }
 
 // Layer structure for serialization
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct LayerData {
     name: String,
     data: Vec<Option<[u8; 4]>>,
@@ -111,7 +111,7 @@ struct LayerData {
 }
 
 // Structure for saving and loading .rustiq files
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct RustiqueFile {
     width: usize,
     height: usize,
@@ -122,6 +122,9 @@ struct RustiqueFile {
     saved_colors: Vec<[u8; 4]>,
     brush_size: i32,
     eraser_size: i32,
+    // Ajouter les données du système de pinceaux
+    brush_properties: Vec<BrushProperties>,
+    active_brush_index: usize,
 }
 
 // Optimized canvas state structure with layers
@@ -220,7 +223,6 @@ struct PaintApp {
     saved_colors: Vec<Color32>,
     brush_size: i32,
     eraser_size: i32,
-    brush_manager: BrushManager,
     last_position: Option<(i32, i32)>,
     is_drawing: bool,
     last_action_time: Instant,
@@ -236,6 +238,11 @@ struct PaintApp {
     last_save_path: Option<String>,
     save_dialog: SaveDialog,
     language: Language,
+    
+    // Système avancé de pinceaux
+    brush_manager: BrushManager,
+    show_brush_panel: bool,
+    selected_brush_tab: usize,
 }
 
 impl PaintApp {
@@ -253,7 +260,6 @@ impl PaintApp {
             saved_colors: Vec::new(),
             brush_size: 3,
             eraser_size: 3,
-            brush_manager: BrushManager::new(),
             last_position: None,
             is_drawing: false,
             last_action_time: Instant::now(),
@@ -269,6 +275,11 @@ impl PaintApp {
             last_save_path: None,
             save_dialog: SaveDialog::Hidden,
             language,
+            
+            // Initialiser le gestionnaire de pinceaux
+            brush_manager: BrushManager::new(),
+            show_brush_panel: false,
+            selected_brush_tab: 0,
         }
     }
 
@@ -324,6 +335,15 @@ impl PaintApp {
             ));
         }
         
+        // Créer un gestionnaire de pinceaux avec les propriétés sauvegardées
+        let mut brush_manager = BrushManager::new();
+        
+        // Si des pinceaux ont été sauvegardés dans le fichier
+        if file.brush_properties.len() > 0 {
+            brush_manager.brushes = file.brush_properties;
+            brush_manager.active_brush_index = file.active_brush_index.min(brush_manager.brushes.len() - 1);
+        }
+        
         Self {
             current_state: canvas,
             undo_stack: Vec::new(),
@@ -335,7 +355,6 @@ impl PaintApp {
             saved_colors,
             brush_size: file.brush_size,
             eraser_size: file.eraser_size,
-            brush_manager: BrushManager::new(),
             last_position: None,
             is_drawing: false,
             last_action_time: Instant::now(),
@@ -351,6 +370,8 @@ impl PaintApp {
             last_save_path: None,
             save_dialog: SaveDialog::Hidden,
             language,
+            brush_manager,
+            show_brush_panel: false,
         }
     }
 
@@ -461,7 +482,6 @@ impl PaintApp {
                             saved_colors: Vec::new(),
                             brush_size: 3,
                             eraser_size: 3,
-                            brush_manager: BrushManager::new(),
                             last_position: None,
                             is_drawing: false,
                             last_action_time: Instant::now(),
@@ -477,6 +497,9 @@ impl PaintApp {
                             last_save_path: Some(path.to_string()),
                             save_dialog: SaveDialog::Hidden,
                             language,
+                            brush_manager: BrushManager::new(),
+                            show_brush_panel: false,
+                            selected_brush_tab: 0,
                         };
                         
                         Ok(app)
@@ -525,6 +548,10 @@ impl PaintApp {
             saved_colors.push([color.r(), color.g(), color.b(), color.a()]);
         }
         
+        // Ajouter les propriétés des pinceaux
+        let brush_properties = self.brush_manager.brushes.clone();
+        let active_brush_index = self.brush_manager.active_brush_index;
+        
         let rustiq_file = RustiqueFile {
             width: self.current_state.width,
             height: self.current_state.height,
@@ -535,6 +562,8 @@ impl PaintApp {
             saved_colors,
             brush_size: self.brush_size,
             eraser_size: self.eraser_size,
+            brush_properties,
+            active_brush_index,
         };
         
         // Sérialiser avec gestion d'erreur
@@ -771,67 +800,81 @@ impl PaintApp {
     }
 
     // Draw a line between two points
-    fn draw_line(&mut self, start: (i32, i32), end: (i32, i32), _color: Color32) {
-        // Update brush manager size if it's different
-        if self.brush_manager.current_size != self.brush_size as f32 {
-            self.brush_manager.current_size = self.brush_size as f32;
-        }
-        
-        // Ensure active layer is visible before drawing
-        if self.current_state.active_layer_index < self.current_state.layers.len() && 
-           !self.current_state.layers[self.current_state.active_layer_index].visible {
-            return;
-        }
-        
-        // Use the advanced brush system to calculate line points
-        let (x0, y0) = start;
-        let (x1, y1) = end;
-        let dx = (x1 - x0).abs();
-        let dy = -(y1 - y0).abs();
-        let sx = if x0 < x1 { 1 } else { -1 };
-        let sy = if y0 < y1 { 1 } else { -1 };
-        let mut err = dx + dy;
-        
-        let mut x = x0;
-        let mut y = y0;
-        
-        // Calculate spacing based on brush properties
-        let spacing = (self.brush_manager.active_brush().spacing * self.brush_manager.current_size).max(1.0);
-        let mut accumulated_distance = 0.0;
-        let mut last_x = x0;
-        let mut last_y = y0;
-        
-        loop {
-            // Calculate distance from last drawn point
-            let segment_length = ((x - last_x).pow(2) + (y - last_y).pow(2)) as f32;
-            accumulated_distance += segment_length.sqrt();
+    fn draw_line(&mut self, start: (i32, i32), end: (i32, i32), color: Color32) {
+        // Si on utilise le pinceau, utiliser le gestionnaire de pinceaux
+        if self.current_tool == Tool::Brush {
+            // Préparer une structure de changements à enregistrer
+            let mut changes = Vec::new();
             
-            // Draw point if we've moved enough
-            if accumulated_distance >= spacing {
-                self.draw_point(x, y, false);
-                accumulated_distance = 0.0;
-                last_x = x;
-                last_y = y;
+            // Créer une fonction qui enregistre les changements dans la liste
+            let mut record_change = |x: usize, y: usize, new_color: Option<Color32>| {
+                if x < self.current_state.width && y < self.current_state.height {
+                    let old_color = self.current_state.get_from_active_layer(x, y);
+                    if old_color != new_color {
+                        changes.push(CanvasChange {
+                            x,
+                            y,
+                            layer_index: self.current_state.active_layer_index,
+                            old_color,
+                            new_color
+                        });
+                    }
+                }
+            };
+            
+            // Mettre à jour l'angle dans le gestionnaire
+            let dx = end.0 - start.0;
+            let dy = end.1 - start.1;
+            if dx != 0 || dy != 0 {
+                self.brush_manager.current_angle = (dy as f32).atan2(dx as f32);
             }
             
-            if x == x1 && y == y1 {
-                break;
+            // Dessiner la ligne avec le gestionnaire de pinceaux
+            self.brush_manager.draw_line(start, end, color, &mut record_change);
+            
+            // Appliquer tous les changements enregistrés
+            for change in changes {
+                self.current_state.set(change.x, change.y, change.new_color);
+                self.current_changes.push(change);
+            }
+        } else {
+            // Pour les autres outils, utiliser l'approche classique
+            let (x0, y0) = start;
+            let (x1, y1) = end;
+            let dx = (x1 - x0).abs();
+            let dy = -(y1 - y0).abs();
+            let sx = if x0 < x1 { 1 } else { -1 };
+            let sy = if y0 < y1 { 1 } else { -1 };
+            let mut err = dx + dy;
+
+            let mut x = x0;
+            let mut y = y0;
+
+            // Pour la gomme, utiliser None comme couleur
+            let _size = if self.current_tool == Tool::Eraser { self.eraser_size } else { self.brush_size };
+            let mut points = Vec::new();
+            
+            loop {
+                points.push((x, y));
+                if x == x1 && y == y1 {
+                    break;
+                }
+                let e2 = 2 * err;
+                if e2 >= dy {
+                    err += dy;
+                    x += sx;
+                }
+                if e2 <= dx {
+                    err += dx;
+                    y += sy;
+                }
             }
             
-            let e2 = 2 * err;
-            if e2 >= dy {
-                err += dy;
-                x += sx;
+            // Draw points with the specified color
+            let fill_color = if self.current_tool == Tool::Eraser { None } else { Some(color) };
+            for &(px, py) in &points {
+                self.draw_point_with_color(px, py, fill_color);
             }
-            if e2 <= dx {
-                err += dx;
-                y += sy;
-            }
-        }
-        
-        // Always draw the final point
-        if last_x != x1 || last_y != y1 {
-            self.draw_point(x1, y1, false);
         }
         
         self.last_action_time = Instant::now();
@@ -841,62 +884,51 @@ impl PaintApp {
     // Draw a single point with optimized circular brush
     fn draw_point(&mut self, x: i32, y: i32, use_secondary: bool) {
         let color = if use_secondary { self.secondary_color } else { self.primary_color };
+        let fill_color = if self.current_tool == Tool::Eraser { None } else { Some(color) };
         
-        // Update brush manager size if it's different
-        if self.brush_manager.current_size != self.brush_size as f32 {
+        // Si on utilise le pinceau, utiliser le gestionnaire de pinceaux
+        if self.current_tool == Tool::Brush {
+            // Mettre à jour la taille du pinceau dans le gestionnaire
             self.brush_manager.current_size = self.brush_size as f32;
-        }
-        
-        // Ensure active layer is visible before drawing
-        if self.current_state.active_layer_index < self.current_state.layers.len() && 
-           !self.current_state.layers[self.current_state.active_layer_index].visible {
-            return;
-        }
-        
-        // Update brush angle based on position
-        self.brush_manager.update_angle(x as f32, y as f32);
-        
-        // Generate brush mask
-        let mask_size = (self.brush_manager.current_size * 2.0 + 1.0) as usize;
-        let mask = self.brush_manager.generate_brush_mask(mask_size);
-        
-        // Apply the mask
-        let center = mask_size as i32 / 2;
-        let width = self.current_state.width as i32;
-        let height = self.current_state.height as i32;
-        
-        for dy in 0..mask_size as i32 {
-            for dx in 0..mask_size as i32 {
-                let nx = x + dx - center;
-                let ny = y + dy - center;
-                
-                if nx >= 0 && nx < width && ny >= 0 && ny < height {
-                    let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
-                    
-                    if mask_value > 0.0 {
-                        // Calculate the final color with alpha blending
-                        let alpha = (color.a() as f32 * mask_value) as u8;
-                        let new_color = if self.current_tool == Tool::Eraser {
-                            None
-                        } else if alpha > 0 {
-                            Some(Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha))
-                        } else {
-                            None
-                        };
-                        
-                        self.record_change(nx as usize, ny as usize, new_color);
+            
+            // Préparer une structure de changements à enregistrer
+            let mut changes = Vec::new();
+            
+            // Créer une fonction qui enregistre les changements dans la liste
+            let mut record_change = |x: usize, y: usize, new_color: Option<Color32>| {
+                if x < self.current_state.width && y < self.current_state.height {
+                    let old_color = self.current_state.get_from_active_layer(x, y);
+                    if old_color != new_color {
+                        changes.push(CanvasChange {
+                            x,
+                            y,
+                            layer_index: self.current_state.active_layer_index,
+                            old_color,
+                            new_color
+                        });
                     }
                 }
+            };
+            
+            // Dessiner le point avec le gestionnaire de pinceaux
+            self.brush_manager.draw_point(x, y, color, &mut record_change);
+            
+            // Appliquer tous les changements enregistrés
+            for change in changes {
+                self.current_state.set(change.x, change.y, change.new_color);
+                self.current_changes.push(change);
             }
+        } else {
+            self.draw_point_with_color(x, y, fill_color);
         }
-        
-        self.texture_dirty = true;
     }
     
     // Helper function for drawing a point with a specific color
     fn draw_point_with_color(&mut self, x: i32, y: i32, fill_color: Option<Color32>) {
-        // For compatibility with existing code, we convert the optional color to a solid color
-        let color = fill_color.unwrap_or(Color32::TRANSPARENT);
+        let width = self.current_state.width as i32;
+        let height = self.current_state.height as i32;
+        let size = if self.current_tool == Tool::Eraser { self.eraser_size } else { self.brush_size };
+        let size_squared = size * size;
         
         // Ensure active layer is visible before drawing
         if self.current_state.active_layer_index < self.current_state.layers.len() && 
@@ -904,44 +936,24 @@ impl PaintApp {
             return;
         }
         
-        // Update brush angle based on position
-        self.brush_manager.update_angle(x as f32, y as f32);
-        
-        // Generate brush mask
-        let mask_size = (self.brush_manager.current_size * 2.0 + 1.0) as usize;
-        let mask = self.brush_manager.generate_brush_mask(mask_size);
-        
-        // Apply the mask
-        let center = mask_size as i32 / 2;
-        let width = self.current_state.width as i32;
-        let height = self.current_state.height as i32;
-        
-        for dy in 0..mask_size as i32 {
-            for dx in 0..mask_size as i32 {
-                let nx = x + dx - center;
-                let ny = y + dy - center;
-                
-                if nx >= 0 && nx < width && ny >= 0 && ny < height {
-                    let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
-                    
-                    if mask_value > 0.0 {
-                        // For eraser or transparent color, set to None
-                        let final_color = if self.current_tool == Tool::Eraser || fill_color.is_none() {
-                            None
-                        } else {
-                            // Apply mask to alpha channel
-                            let alpha = (color.a() as f32 * mask_value) as u8;
-                            if alpha > 0 {
-                                Some(Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha))
-                            } else {
-                                None
-                            }
-                        };
-                        
-                        self.record_change(nx as usize, ny as usize, final_color);
+        // Collect all points that need to be modified
+        let mut pixels = Vec::new();
+        for dy in -size..=size {
+            for dx in -size..=size {
+                // Use circle equation dx²+dy² ≤ r² for circular brush
+                if dx*dx + dy*dy <= size_squared {
+                    let nx = x + dx;
+                    let ny = y + dy;
+                    if nx >= 0 && nx < width && ny >= 0 && ny < height {
+                        pixels.push((nx as usize, ny as usize));
                     }
                 }
             }
+        }
+        
+        // Process all pixels sequentially
+        for (nx, ny) in pixels {
+            self.record_change(nx, ny, fill_color);
         }
         
         self.texture_dirty = true;
@@ -1409,11 +1421,10 @@ impl eframe::App for MyApp {
                         
                         ui.separator();
                         
-                        // Advanced Brush System
-                        ui.label(get_text("brush_selection", self.language));
-                        if paint_app.brush_manager.brush_selector_grid(ui, ctx, self.language) {
-                            // Brush changed, update the current size to match the tool
-                            paint_app.brush_manager.current_size = paint_app.brush_size as f32;
+                        // Bouton pour afficher/masquer le panneau des pinceaux avancés
+                        if ui.button(get_text("advanced_brush_system", self.language)).clicked() {
+                            paint_app.show_brush_panel = !paint_app.show_brush_panel;
+                            paint_app.current_tool = Tool::Brush; // Passer automatiquement à l'outil pinceau
                         }
                         
                         ui.separator();
@@ -1444,7 +1455,10 @@ impl eframe::App for MyApp {
                         
                         ui.add_space(10.0);
                         ui.label(get_text("brush_size", self.language));
-                        ui.add(egui::DragValue::new(&mut paint_app.brush_size).speed(0.1).clamp_range(1..=500));
+                        if ui.add(egui::DragValue::new(&mut paint_app.brush_size).speed(0.1).clamp_range(1..=500)).changed() {
+                            // Mettre à jour la taille dans le gestionnaire de pinceaux
+                            paint_app.brush_manager.current_size = paint_app.brush_size as f32;
+                        }
                         
                         ui.add_space(10.0);
                         ui.label(get_text("eraser_size", self.language));
@@ -1538,6 +1552,128 @@ impl eframe::App for MyApp {
                     });
                     (undo_clicked, redo_clicked, return_clicked)
                 }).inner;
+                
+                // Panneau de configuration des pinceaux avancés
+                if paint_app.show_brush_panel {
+                    egui::Window::new(get_text("advanced_brush_system", paint_app.language))
+                        .collapsible(true)
+                        .resizable(true)
+                        .default_width(300.0)
+                        .show(ctx, |ui| {
+                            // Boutons d'onglets en haut de la fenêtre
+                            ui.horizontal(|ui| {
+                                let settings_text = get_text("brush_settings", paint_app.language);
+                                let selector_text = get_text("select_brush", paint_app.language);
+                                
+                                if ui.selectable_label(paint_app.selected_brush_tab == 0, settings_text).clicked() {
+                                    paint_app.selected_brush_tab = 0;
+                                }
+                                
+                                if ui.selectable_label(paint_app.selected_brush_tab == 1, selector_text).clicked() {
+                                    paint_app.selected_brush_tab = 1;
+                                }
+                                
+                                ui.separator();
+                            });
+                            
+                            // Contenu de l'onglet sélectionné
+                            let mut changed = false;
+                            
+                            match paint_app.selected_brush_tab {
+                                0 => {
+                                    // Afficher les paramètres de pinceau
+                                    ui.vertical(|ui| {
+                                        // Taille du pinceau
+                                        ui.horizontal(|ui| {
+                                            ui.label(get_text("brush_size", paint_app.language));
+                                            if ui.add(egui::Slider::new(&mut paint_app.brush_manager.current_size, 1.0..=50.0)
+                                                .text(get_text("size", paint_app.language))).changed() {
+                                                changed = true;
+                                                // Synchroniser avec la taille du pinceau dans l'application
+                                                paint_app.brush_size = paint_app.brush_manager.current_size as i32;
+                                            }
+                                        });
+                                        
+                                        // Propriétés du pinceau actif
+                                        let mut active = paint_app.brush_manager.active_brush().clone();
+                                        
+                                        // Type de pinceau
+                                        ui.horizontal(|ui| {
+                                            ui.label(get_text("brush_type", paint_app.language));
+                                            
+                                            egui::ComboBox::from_id_source("brush_type_selector")
+                                                .selected_text(active.brush_type.get_name(paint_app.language))
+                                                .show_ui(ui, |ui| {
+                                                    for brush_type in BrushType::all_types() {
+                                                        if ui.selectable_label(active.brush_type == brush_type, 
+                                                                              brush_type.get_name(paint_app.language)).clicked() {
+                                                            active.brush_type = brush_type;
+                                                            changed = true;
+                                                        }
+                                                    }
+                                                });
+                                        });
+                                        
+                                        // Facteur d'étirement
+                                        ui.horizontal(|ui| {
+                                            ui.label(get_text("stretch_factor", paint_app.language));
+                                            if ui.add(egui::Slider::new(&mut active.stretch_factor, 0.1..=5.0)
+                                                .text(get_text("stretch", paint_app.language))).changed() {
+                                                changed = true;
+                                            }
+                                        });
+                                        
+                                        // Sensibilité à l'angle
+                                        ui.horizontal(|ui| {
+                                            ui.label(get_text("angle_sensitivity", paint_app.language));
+                                            if ui.add(egui::Slider::new(&mut active.angle_sensitivity, 0.0..=1.0)
+                                                .text(get_text("sensitivity", paint_app.language))).changed() {
+                                                changed = true;
+                                            }
+                                        });
+                                        
+                                        // Dureté des bords
+                                        ui.horizontal(|ui| {
+                                            ui.label(get_text("hardness", paint_app.language));
+                                            if ui.add(egui::Slider::new(&mut active.hardness, 0.0..=1.0)).changed() {
+                                                changed = true;
+                                            }
+                                        });
+                                        
+                                        // Espacement
+                                        ui.horizontal(|ui| {
+                                            ui.label(get_text("spacing", paint_app.language));
+                                            if ui.add(egui::Slider::new(&mut active.spacing, 0.1..=2.0)).changed() {
+                                                changed = true;
+                                            }
+                                        });
+                                        
+                                        // Texture/force de texture
+                                        ui.horizontal(|ui| {
+                                            ui.label(get_text("texture_strength", paint_app.language));
+                                            if ui.add(egui::Slider::new(&mut active.texture_strength, 0.0..=1.0)
+                                                .text(get_text("strength", paint_app.language))).changed() {
+                                                changed = true;
+                                            }
+                                        });
+                                        
+                                        // Si des changements ont été faits, mettre à jour le pinceau actif
+                                        if changed {
+                                            *paint_app.brush_manager.active_brush_mut() = active;
+                                            paint_app.has_unsaved_changes = true;
+                                        }
+                                    });
+                                },
+                                _ => {
+                                    // Sélecteur visuel de pinceaux
+                                    if paint_app.brush_manager.brush_selector_grid(ui, ctx, paint_app.language) {
+                                        paint_app.has_unsaved_changes = true;
+                                    }
+                                }
+                            }
+                        });
+                }
+                }
                 
                 // Handle button actions outside of the panel to avoid borrow issues
                 if undo_clicked {
@@ -1683,6 +1819,14 @@ impl eframe::App for MyApp {
                                         _ => {
                                             let (x, y) = (canvas_pos.x as i32, canvas_pos.y as i32);
                                             if let Some(last_pos) = paint_app.last_position {
+                                                // Calculer la direction du mouvement pour le système de pinceaux avancé
+                                                let dx = x - last_pos.0;
+                                                let dy = y - last_pos.1;
+                                                if paint_app.current_tool == Tool::Brush && (dx != 0 || dy != 0) {
+                                                    let angle = (dy as f32).atan2(dx as f32);
+                                                    paint_app.brush_manager.current_angle = angle;
+                                                }
+                                                
                                                 paint_app.draw_line(last_pos, (x, y), 
                                                                   if is_secondary { paint_app.secondary_color } 
                                                                   else { paint_app.primary_color });
@@ -1698,6 +1842,8 @@ impl eframe::App for MyApp {
                         } else {
                             paint_app.save_state();
                             paint_app.last_position = None;
+                            // Réinitialiser la position dans le gestionnaire de pinceaux
+                            paint_app.brush_manager.reset_position();
                         }
                     }
 
@@ -1733,4 +1879,3 @@ fn main() -> eframe::Result<()> {
         native_options,
         Box::new(|_cc| Box::new(MyApp::default())),
     )
-}

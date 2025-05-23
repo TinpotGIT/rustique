@@ -86,6 +86,19 @@ fn get_french_text(key: &str) -> String {
         ("error_reading_file", "Erreur lors de la lecture du fichier"),
         ("error_saving_png", "Erreur lors de la sauvegarde PNG"),
         ("error_saving_image", "Erreur lors de la sauvegarde de l'image"),
+        
+        // Système de pinceaux
+        ("brush_selection", "Sélection du pinceau"),
+        ("select_brush", "Sélectionner un pinceau"),
+        ("brush_round", "Rond"),
+        ("brush_flat", "Plat"),
+        ("brush_bright", "Brillant"),
+        ("brush_filbert", "Filbert"),
+        ("brush_fan", "Éventail"),
+        ("brush_angle", "Angle"),
+        ("brush_mop", "Mop"),
+        ("brush_rigger", "Rigger"),
+        ("brush_custom", "Personnalisé"),
     ].iter().cloned().collect();
     
     translations.get(key).unwrap_or(&key).to_string()
@@ -164,6 +177,19 @@ fn get_english_text(key: &str) -> String {
         ("error_reading_file", "Error reading file"),
         ("error_saving_png", "Error saving PNG"),
         ("error_saving_image", "Error saving image"),
+        
+        // Brush system
+        ("brush_selection", "Brush Selection"),
+        ("select_brush", "Select Brush"),
+        ("brush_round", "Round"),
+        ("brush_flat", "Flat"),
+        ("brush_bright", "Bright"),
+        ("brush_filbert", "Filbert"),
+        ("brush_fan", "Fan"),
+        ("brush_angle", "Angle"),
+        ("brush_mop", "Mop"),
+        ("brush_rigger", "Rigger"),
+        ("brush_custom", "Custom"),
     ].iter().cloned().collect();
     
     translations.get(key).unwrap_or(&key).to_string()
