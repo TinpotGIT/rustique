@@ -1,9 +1,11 @@
 mod main_menu;
 mod localization;
 mod brush_system;
+mod ui_theme;
+mod ui_icons;
 
 use eframe::egui;
-use egui::{Color32, TextureHandle, TextureOptions, Rect, Pos2, Vec2, Stroke};
+use egui::{Color32, TextureHandle, TextureOptions, Rect, Pos2, Vec2, Stroke, RichText};
 use image::{ImageBuffer, Rgba, ImageFormat};
 use std::collections::VecDeque;
 use rfd::FileDialog;
@@ -16,6 +18,8 @@ use serde::{Serialize, Deserialize};
 use main_menu::MainMenu;
 use localization::{Language, get_text};
 use brush_system::BrushManager;
+use ui_theme::RustiqueTheme;
+use ui_icons::ToolIcons;
 
 // Constants
 const MAX_UNDO_STEPS: usize = 20;
@@ -1358,6 +1362,8 @@ impl Default for MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        RustiqueTheme::apply_theme(ctx);
+        
         // Process keyboard shortcuts
         let ctrl = ctx.input(|i| i.modifiers.ctrl);
         let shift = ctx.input(|i| i.modifiers.shift);
@@ -1581,217 +1587,549 @@ impl eframe::App for MyApp {
                 
                 paint_app.update_texture(ctx);
 
-                egui::SidePanel::left("layers_panel").show(ctx, |ui| {
-                    ui.set_min_width(180.0);
-                    ui.vertical(|ui| {
-                        ui.heading(get_text("layers", self.language));
-                        ui.separator();
-                        
-                        // Layer controls
-                        ui.horizontal(|ui| {
-                            if ui.button("+").clicked() {
-                                paint_app.add_layer(format!("{} {}", get_text("layer", self.language), paint_app.current_state.layers.len() + 1));
-                            }
-                            if ui.button("-").clicked() && paint_app.current_state.layers.len() > 1 {
-                                paint_app.remove_layer(paint_app.current_state.active_layer_index);
-                            }
-                            ui.add_space(5.0);
-                            if ui.button(get_text("up", self.language)).clicked() {
-                                paint_app.move_layer_up(paint_app.current_state.active_layer_index);
-                            }
-                            if ui.button(get_text("down", self.language)).clicked() {
-                                paint_app.move_layer_down(paint_app.current_state.active_layer_index);
-                            }
-                        });
-                        
-                        ui.separator();
-                        
-                        // Layer list - clone the data to avoid borrowing issues
-                        // This avoids the conflict between immutable and mutable borrows
-                        let layers_info: Vec<(usize, String, bool, bool)> = paint_app.current_state.layers
-                            .iter()
-                            .enumerate()
-                            .map(|(i, layer)| (i, layer.name.clone(), layer.visible, i == paint_app.current_state.active_layer_index))
-                            .collect();
-                        
-                        // Display the layers in reverse order (top layer first visually)
-                        for (i, name, visible, is_active) in layers_info.iter().rev() {
-                            ui.horizontal(|ui| {
-                                let visible_text = if *visible { "👁" } else { "⊘" };
-                                if ui.button(visible_text).clicked() {
-                                    self.pending_action = PendingAction::HandleLayerAction(
-                                        LayerAction::ToggleVisibility(*i)
-                                    );
-                                }
+                egui::SidePanel::left("layers_panel")
+                    .resizable(true)
+                    .default_width(200.0)
+                    .show(ctx, |ui| {
+                        RustiqueTheme::panel_frame().show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                ui.label(RustiqueTheme::heading_text("Layers", 16.0));
+                                ui.add_space(RustiqueTheme::SPACING_SM);
                                 
-                                if ui.selectable_label(*is_active, name).clicked() {
-                                    self.pending_action = PendingAction::HandleLayerAction(
-                                        LayerAction::SetActive(*i)
-                                    );
-                                }
-                                
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.small_button("✏").clicked() {
-                                        self.pending_action = PendingAction::HandleLayerAction(
-                                            LayerAction::Edit(*i)
-                                        );
+                                ui.horizontal(|ui| {
+                                    let btn_size = Vec2::new(32.0, 28.0);
+                                    
+                                    if ui.add(
+                                        egui::Button::new(ToolIcons::add())
+                                            .fill(RustiqueTheme::ACCENT_PRIMARY)
+                                            .stroke(egui::Stroke::new(1.0, RustiqueTheme::ACCENT_PRIMARY))
+                                            .rounding(RustiqueTheme::rounding_small())
+                                            .min_size(btn_size)
+                                    ).clicked() {
+                                        paint_app.add_layer(format!("Layer {}", paint_app.current_state.layers.len() + 1));
                                     }
+                                    
+                                    ui.add_space(RustiqueTheme::SPACING_XS);
+                                    
+                                    if ui.add(
+                                        egui::Button::new(ToolIcons::remove())
+                                            .fill(if paint_app.current_state.layers.len() > 1 { 
+                                                RustiqueTheme::ERROR 
+                                            } else { 
+                                                RustiqueTheme::SURFACE_PRIMARY 
+                                            })
+                                            .stroke(egui::Stroke::new(1.0, if paint_app.current_state.layers.len() > 1 { 
+                                                RustiqueTheme::ERROR 
+                                            } else { 
+                                                RustiqueTheme::BORDER_LIGHT 
+                                            }))
+                                            .rounding(RustiqueTheme::rounding_small())
+                                            .min_size(btn_size)
+                                    ).clicked() && paint_app.current_state.layers.len() > 1 {
+                                        paint_app.remove_layer(paint_app.current_state.active_layer_index);
+                                    }
+                                    
+                                    ui.add_space(RustiqueTheme::SPACING_SM);
+                                    
+                                    if ui.add(
+                                        egui::Button::new(ToolIcons::move_up())
+                                            .fill(RustiqueTheme::SURFACE_SECONDARY)
+                                            .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                            .rounding(RustiqueTheme::rounding_small())
+                                            .min_size(btn_size)
+                                    ).clicked() {
+                                        paint_app.move_layer_up(paint_app.current_state.active_layer_index);
+                                    }
+                                    
+                                    ui.add_space(RustiqueTheme::SPACING_XS);
+                                    
+                                    if ui.add(
+                                        egui::Button::new(ToolIcons::move_down())
+                                            .fill(RustiqueTheme::SURFACE_SECONDARY)
+                                            .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                            .rounding(RustiqueTheme::rounding_small())
+                                            .min_size(btn_size)
+                                    ).clicked() {
+                                        paint_app.move_layer_down(paint_app.current_state.active_layer_index);
+                                    }
+                                });
+                                
+                                ui.add_space(RustiqueTheme::SPACING_SM);
+                                ui.add_space(RustiqueTheme::SPACING_SM);
+                                
+                                let layers_info: Vec<(usize, String, bool, bool)> = paint_app.current_state.layers
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, layer)| (i, layer.name.clone(), layer.visible, i == paint_app.current_state.active_layer_index))
+                                    .collect();
+                                
+                                for (i, name, visible, is_active) in layers_info.iter().rev() {
+                                    RustiqueTheme::card_frame().show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            let visibility_btn = ui.add(
+                                                egui::Button::new(if *visible { ToolIcons::layer_visible() } else { ToolIcons::layer_hidden() })
+                                                    .fill(Color32::TRANSPARENT)
+                                                    .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                                    .rounding(RustiqueTheme::rounding_small())
+                                                    .min_size(Vec2::new(28.0, 28.0))
+                                            );
+                                            
+                                            if visibility_btn.clicked() {
+                                                self.pending_action = PendingAction::HandleLayerAction(
+                                                    LayerAction::ToggleVisibility(*i)
+                                                );
+                                            }
+                                            
+                                            ui.add_space(RustiqueTheme::SPACING_XS);
+                                            
+                                            let layer_btn = ui.add(
+                                                egui::Button::new(RustiqueTheme::body_text(name))
+                                                    .fill(if *is_active { 
+                                                        RustiqueTheme::ACCENT_PRIMARY.linear_multiply(0.3) 
+                                                    } else { 
+                                                        Color32::TRANSPARENT 
+                                                    })
+                                                    .stroke(egui::Stroke::new(
+                                                        if *is_active { 2.0 } else { 1.0 },
+                                                        if *is_active { 
+                                                            RustiqueTheme::ACCENT_PRIMARY 
+                                                        } else { 
+                                                            RustiqueTheme::BORDER_LIGHT 
+                                                        }
+                                                    ))
+                                                    .rounding(RustiqueTheme::rounding_small())
+                                                    .min_size(Vec2::new(ui.available_width() - 60.0, 28.0))
+                                            );
+                                            
+                                            if layer_btn.clicked() {
+                                                self.pending_action = PendingAction::HandleLayerAction(
+                                                    LayerAction::SetActive(*i)
+                                                );
+                                            }
+                                            
+                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                if ui.add(
+                                                    egui::Button::new(ToolIcons::edit())
+                                                        .fill(Color32::TRANSPARENT)
+                                                        .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                                        .rounding(RustiqueTheme::rounding_small())
+                                                        .min_size(Vec2::new(24.0, 24.0))
+                                                ).clicked() {
+                                                    self.pending_action = PendingAction::HandleLayerAction(
+                                                        LayerAction::Edit(*i)
+                                                    );
+                                                }
+                                            });
+                                        });
+                                    });
+                                    ui.add_space(RustiqueTheme::SPACING_XS);
+                                }
+                            });
+                        });
+                    });
+
+                egui::SidePanel::left("toolbar")
+                    .resizable(false)
+                    .exact_width(60.0)
+                    .show(ctx, |ui| {
+                        RustiqueTheme::panel_frame().show(ui, |ui| {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(RustiqueTheme::SPACING_SM);
+                                
+                                let tool_size = Vec2::new(40.0, 40.0);
+                                
+                                let brush_btn = ui.add(
+                                    egui::Button::new(ToolIcons::brush())
+                                        .fill(if paint_app.current_tool == Tool::Brush { 
+                                            RustiqueTheme::ACCENT_PRIMARY 
+                                        } else { 
+                                            RustiqueTheme::SURFACE_PRIMARY 
+                                        })
+                                        .stroke(egui::Stroke::new(
+                                            if paint_app.current_tool == Tool::Brush { 2.0 } else { 1.0 },
+                                            if paint_app.current_tool == Tool::Brush { 
+                                                RustiqueTheme::ACCENT_PRIMARY 
+                                            } else { 
+                                                RustiqueTheme::BORDER_LIGHT 
+                                            }
+                                        ))
+                                        .rounding(RustiqueTheme::rounding_small())
+                                        .min_size(tool_size)
+                                );
+                                if brush_btn.clicked() {
+                                    paint_app.current_tool = Tool::Brush;
+                                }
+                                brush_btn.on_hover_text("Brush Tool");
+                                
+                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                
+                                let eraser_btn = ui.add(
+                                    egui::Button::new(ToolIcons::eraser())
+                                        .fill(if paint_app.current_tool == Tool::Eraser { 
+                                            RustiqueTheme::ACCENT_PRIMARY 
+                                        } else { 
+                                            RustiqueTheme::SURFACE_PRIMARY 
+                                        })
+                                        .stroke(egui::Stroke::new(
+                                            if paint_app.current_tool == Tool::Eraser { 2.0 } else { 1.0 },
+                                            if paint_app.current_tool == Tool::Eraser { 
+                                                RustiqueTheme::ACCENT_PRIMARY 
+                                            } else { 
+                                                RustiqueTheme::BORDER_LIGHT 
+                                            }
+                                        ))
+                                        .rounding(RustiqueTheme::rounding_small())
+                                        .min_size(tool_size)
+                                );
+                                if eraser_btn.clicked() {
+                                    paint_app.current_tool = Tool::Eraser;
+                                }
+                                eraser_btn.on_hover_text("Eraser Tool");
+                                
+                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                
+                                let bucket_btn = ui.add(
+                                    egui::Button::new(ToolIcons::paint_bucket())
+                                        .fill(if paint_app.current_tool == Tool::PaintBucket { 
+                                            RustiqueTheme::ACCENT_PRIMARY 
+                                        } else { 
+                                            RustiqueTheme::SURFACE_PRIMARY 
+                                        })
+                                        .stroke(egui::Stroke::new(
+                                            if paint_app.current_tool == Tool::PaintBucket { 2.0 } else { 1.0 },
+                                            if paint_app.current_tool == Tool::PaintBucket { 
+                                                RustiqueTheme::ACCENT_PRIMARY 
+                                            } else { 
+                                                RustiqueTheme::BORDER_LIGHT 
+                                            }
+                                        ))
+                                        .rounding(RustiqueTheme::rounding_small())
+                                        .min_size(tool_size)
+                                );
+                                if bucket_btn.clicked() {
+                                    paint_app.current_tool = Tool::PaintBucket;
+                                }
+                                bucket_btn.on_hover_text("Paint Bucket");
+                                
+                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                
+                                let picker_btn = ui.add(
+                                    egui::Button::new(ToolIcons::color_picker())
+                                        .fill(if paint_app.current_tool == Tool::ColorPicker { 
+                                            RustiqueTheme::ACCENT_PRIMARY 
+                                        } else { 
+                                            RustiqueTheme::SURFACE_PRIMARY 
+                                        })
+                                        .stroke(egui::Stroke::new(
+                                            if paint_app.current_tool == Tool::ColorPicker { 2.0 } else { 1.0 },
+                                            if paint_app.current_tool == Tool::ColorPicker { 
+                                                RustiqueTheme::ACCENT_PRIMARY 
+                                            } else { 
+                                                RustiqueTheme::BORDER_LIGHT 
+                                            }
+                                        ))
+                                        .rounding(RustiqueTheme::rounding_small())
+                                        .min_size(tool_size)
+                                );
+                                if picker_btn.clicked() {
+                                    paint_app.current_tool = Tool::ColorPicker;
+                                }
+                                picker_btn.on_hover_text("Color Picker");
+                                
+                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                
+                                let line_btn = ui.add(
+                                    egui::Button::new(ToolIcons::line())
+                                        .fill(if paint_app.current_tool == Tool::Line { 
+                                            RustiqueTheme::ACCENT_PRIMARY 
+                                        } else { 
+                                            RustiqueTheme::SURFACE_PRIMARY 
+                                        })
+                                        .stroke(egui::Stroke::new(
+                                            if paint_app.current_tool == Tool::Line { 2.0 } else { 1.0 },
+                                            if paint_app.current_tool == Tool::Line { 
+                                                RustiqueTheme::ACCENT_PRIMARY 
+                                            } else { 
+                                                RustiqueTheme::BORDER_LIGHT 
+                                            }
+                                        ))
+                                        .rounding(RustiqueTheme::rounding_small())
+                                        .min_size(tool_size)
+                                );
+                                if line_btn.clicked() {
+                                    paint_app.current_tool = Tool::Line;
+                                }
+                                line_btn.on_hover_text("Line Tool");
+                                
+                                ui.add_space(RustiqueTheme::SPACING_MD);
+                                
+                                ui.separator();
+                                
+                                ui.add_space(RustiqueTheme::SPACING_SM);
+                                
+                                let color_size = 35.0;
+                                let primary_btn = ui.add(
+                                    egui::Button::new("")
+                                        .fill(paint_app.primary_color)
+                                        .stroke(egui::Stroke::new(2.0, RustiqueTheme::TEXT_PRIMARY))
+                                        .rounding(RustiqueTheme::rounding_small())
+                                        .min_size(Vec2::new(color_size, color_size))
+                                );
+                                if primary_btn.clicked() {
+                                }
+                                primary_btn.on_hover_text("Primary Color");
+                                
+                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                
+                                let secondary_btn = ui.add(
+                                    egui::Button::new("")
+                                        .fill(paint_app.secondary_color)
+                                        .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                        .rounding(RustiqueTheme::rounding_small())
+                                        .min_size(Vec2::new(color_size * 0.8, color_size * 0.8))
+                                );
+                                if secondary_btn.clicked() {
+                                }
+                                secondary_btn.on_hover_text("Secondary Color");
+                            });
+                        });
+                    });
+
+                egui::SidePanel::right("properties_panel")
+                    .resizable(true)
+                    .default_width(250.0)
+                    .show(ctx, |ui| {
+                        RustiqueTheme::panel_frame().show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                ui.label(RustiqueTheme::heading_text("Properties", 16.0));
+                                ui.add_space(RustiqueTheme::SPACING_SM);
+                                
+                                RustiqueTheme::card_frame().show(ui, |ui| {
+                                    ui.vertical(|ui| {
+                                        ui.label(RustiqueTheme::body_text("Brush System"));
+                                        ui.add_space(RustiqueTheme::SPACING_XS);
+                                        
+                                        if paint_app.brush_manager.brush_selector_grid(ui, ctx, self.language) {
+                                            paint_app.brush_manager.current_size = paint_app.brush_size as f32;
+                                        }
+                                    });
+                                });
+                                
+                                ui.add_space(RustiqueTheme::SPACING_MD);
+                                
+                                RustiqueTheme::card_frame().show(ui, |ui| {
+                                    ui.vertical(|ui| {
+                                        ui.label(RustiqueTheme::body_text("Tool Settings"));
+                                        ui.add_space(RustiqueTheme::SPACING_XS);
+                                        
+                                        ui.horizontal(|ui| {
+                                            ui.label(RustiqueTheme::muted_text("Brush Size:"));
+                                            ui.add(egui::DragValue::new(&mut paint_app.brush_size)
+                                                .speed(0.1)
+                                                .clamp_range(1..=500)
+                                                .suffix("px"));
+                                        });
+                                        
+                                        ui.add_space(RustiqueTheme::SPACING_XS);
+                                        
+                                        ui.horizontal(|ui| {
+                                            ui.label(RustiqueTheme::muted_text("Eraser Size:"));
+                                            ui.add(egui::DragValue::new(&mut paint_app.eraser_size)
+                                                .speed(0.1)
+                                                .clamp_range(1..=500)
+                                                .suffix("px"));
+                                        });
+                                        
+                                        ui.add_space(RustiqueTheme::SPACING_XS);
+                                        
+                                        ui.horizontal(|ui| {
+                                            ui.label(RustiqueTheme::muted_text("Zoom:"));
+                                            ui.add(egui::Slider::new(&mut paint_app.zoom, 0.1..=10.0)
+                                                .logarithmic(true)
+                                                .suffix("x"));
+                                        });
+                                    });
+                                });
+                                
+                                ui.add_space(RustiqueTheme::SPACING_MD);
+                                ui.add_space(RustiqueTheme::SPACING_MD);
+                                
+                                RustiqueTheme::card_frame().show(ui, |ui| {
+                                    ui.vertical(|ui| {
+                                        ui.label(RustiqueTheme::body_text("Colors"));
+                                        ui.add_space(RustiqueTheme::SPACING_XS);
+                                        
+                                        ui.horizontal(|ui| {
+                                            ui.label(RustiqueTheme::muted_text("Primary:"));
+                                            ui.color_edit_button_srgba(&mut paint_app.primary_color);
+                                            if ui.add(
+                                                egui::Button::new(ToolIcons::add())
+                                                    .fill(RustiqueTheme::SURFACE_SECONDARY)
+                                                    .rounding(RustiqueTheme::rounding_small())
+                                                    .min_size(Vec2::new(24.0, 24.0))
+                                            ).clicked() {
+                                                paint_app.add_saved_color(paint_app.primary_color);
+                                            }
+                                        });
+                                        
+                                        ui.add_space(RustiqueTheme::SPACING_XS);
+                                        
+                                        ui.horizontal(|ui| {
+                                            ui.label(RustiqueTheme::muted_text("Secondary:"));
+                                            ui.color_edit_button_srgba(&mut paint_app.secondary_color);
+                                            if ui.add(
+                                                egui::Button::new(ToolIcons::add())
+                                                    .fill(RustiqueTheme::SURFACE_SECONDARY)
+                                                    .rounding(RustiqueTheme::rounding_small())
+                                                    .min_size(Vec2::new(24.0, 24.0))
+                                            ).clicked() {
+                                                paint_app.add_saved_color(paint_app.secondary_color);
+                                            }
+                                        });
+                                    });
+                                });
+                                
+                                if !paint_app.saved_colors.is_empty() {
+                                    ui.add_space(RustiqueTheme::SPACING_MD);
+                                    
+                                    RustiqueTheme::card_frame().show(ui, |ui| {
+                                        ui.vertical(|ui| {
+                                            ui.label(RustiqueTheme::body_text("Saved Colors"));
+                                            ui.add_space(RustiqueTheme::SPACING_XS);
+                                            
+                                            let available_width = ui.available_width();
+                                            let color_size = 28.0;
+                                            let spacing = 4.0;
+                                            let colors_per_row = ((available_width + spacing) / (color_size + spacing)).floor() as usize;
+                                            let colors_count = paint_app.saved_colors.len();
+                                            
+                                            for i in 0..(colors_count / colors_per_row + (if colors_count % colors_per_row > 0 { 1 } else { 0 })) {
+                                                ui.horizontal(|ui| {
+                                                    for j in 0..colors_per_row {
+                                                        let idx = i * colors_per_row + j;
+                                                        if idx < colors_count {
+                                                            let color = paint_app.saved_colors[idx];
+                                                            let btn = ui.add(
+                                                                egui::Button::new("")
+                                                                    .fill(color)
+                                                                    .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                                                    .rounding(RustiqueTheme::rounding_small())
+                                                                    .min_size(Vec2::new(color_size, color_size))
+                                                            );
+                                                            
+                                                            if btn.clicked() {
+                                                                paint_app.primary_color = color;
+                                                            }
+                                                            if btn.clicked_by(egui::PointerButton::Secondary) {
+                                                                paint_app.secondary_color = color;
+                                                            }
+                                                            if btn.clicked_by(egui::PointerButton::Middle) {
+                                                                paint_app.remove_saved_color(idx);
+                                                                break;
+                                                            }
+                                                            
+                                                            btn.on_hover_text("Left: Primary | Right: Secondary | Middle: Delete");
+                                                        }
+                                                    }
+                                                });
+                                            }
+                                        });
+                                    });
+                                }
+                                
+                                ui.add_space(RustiqueTheme::SPACING_MD);
+                                
+                                RustiqueTheme::card_frame().show(ui, |ui| {
+                                    ui.vertical(|ui| {
+                                        ui.label(RustiqueTheme::body_text("Quick Actions"));
+                                        ui.add_space(RustiqueTheme::SPACING_XS);
+                                        
+                                        if ui.add(
+                                            egui::Button::new(RichText::new("💾 Save File").size(14.0))
+                                                .fill(RustiqueTheme::SURFACE_SECONDARY)
+                                                .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                                .rounding(RustiqueTheme::rounding_medium())
+                                                .min_size(Vec2::new(ui.available_width(), 32.0))
+                                        ).clicked() {
+                                            if let Some(path) = FileDialog::new()
+                                                .add_filter("All Supported Files", &["png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp", "rustiq"])
+                                                .add_filter("PNG Image", &["png"])
+                                                .add_filter("JPEG Image", &["jpg", "jpeg"])
+                                                .add_filter("BMP Image", &["bmp"])
+                                                .add_filter("TIFF Image", &["tiff", "tif"])
+                                                .add_filter("GIF Image", &["gif"])
+                                                .add_filter("WebP Image", &["webp"])
+                                                .add_filter("Rustique File", &["rustiq"])
+                                                .set_directory("/")
+                                                .save_file() {
+                                                match paint_app.save_file(path.to_str().unwrap()) {
+                                                    Ok(_) => {},
+                                                    Err(e) => {
+                                                        self.error_message = Some(e);
+                                                        self.show_error = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    });
                                 });
                             });
-                        }
+                        });
                     });
-                });
 
-                egui::SidePanel::right("tools_panel").show(ctx, |ui| {
-                    ui.vertical(|ui| {
-                        ui.heading(get_text("tools", self.language));
-                        if ui.button(get_text("brush", self.language)).clicked() {
-                            paint_app.current_tool = Tool::Brush;
-                        }
-                        if ui.button(get_text("eraser", self.language)).clicked() {
-                            paint_app.current_tool = Tool::Eraser;
-                        }
-                        if ui.button(get_text("paint_bucket", self.language)).clicked() {
-                            paint_app.current_tool = Tool::PaintBucket;
-                        }
-                        if ui.button(get_text("color_picker", self.language)).clicked() {
-                            paint_app.current_tool = Tool::ColorPicker;
-                        }
-                        if ui.button(get_text("line", self.language)).clicked() {
-                            paint_app.current_tool = Tool::Line;
-                        }
+                let (undo_clicked, redo_clicked, return_to_menu_clicked) = egui::TopBottomPanel::top("top_panel")
+                    .frame(RustiqueTheme::panel_frame())
+                    .show(ctx, |ui| {
+                        let mut return_clicked = false;
+                        let mut undo_clicked = false;
+                        let mut redo_clicked = false;
                         
-                        ui.separator();
-                        
-                        // Advanced Brush System
-                        ui.label(get_text("brush_selection", self.language));
-                        if paint_app.brush_manager.brush_selector_grid(ui, ctx, self.language) {
-                            // Brush changed, update the current size to match the tool
-                            paint_app.brush_manager.current_size = paint_app.brush_size as f32;
-                        }
-                        
-                        ui.separator();
-                        ui.label(get_text("save_options", self.language));
-                        if ui.button(get_text("save_file", self.language)).clicked() {
-                            if let Some(path) = FileDialog::new()
-                                .add_filter("All Supported Files", &["png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp", "rustiq"])
-                                .add_filter("PNG Image", &["png"])
-                                .add_filter("JPEG Image", &["jpg", "jpeg"])
-                                .add_filter("BMP Image", &["bmp"])
-                                .add_filter("TIFF Image", &["tiff", "tif"])
-                                .add_filter("GIF Image", &["gif"])
-                                .add_filter("WebP Image", &["webp"])
-                                .add_filter("Rustique File", &["rustiq"])
-                                .set_directory("/")
-                                .save_file() {
-                                match paint_app.save_file(path.to_str().unwrap()) {
-                                    Ok(_) => {},
-                                    Err(e) => {
-                                        self.error_message = Some(e);
-                                        self.show_error = true;
-                                    }
-                                }
-                            }
-                        }
-                        
-                        ui.separator();
-                        
-                        ui.add_space(10.0);
-                        ui.label(get_text("brush_size", self.language));
-                        ui.add(egui::DragValue::new(&mut paint_app.brush_size).speed(0.1).clamp_range(1..=500));
-                        
-                        ui.add_space(10.0);
-                        ui.label(get_text("eraser_size", self.language));
-                        ui.add(egui::DragValue::new(&mut paint_app.eraser_size).speed(0.1).clamp_range(1..=500));
-                        
-                        ui.add_space(10.0);
-                        ui.label(get_text("colors", self.language));
                         ui.horizontal(|ui| {
-                            ui.label(get_text("primary", self.language));
-                            ui.color_edit_button_srgba(&mut paint_app.primary_color);
-                            if ui.button("+").clicked() {
-                                paint_app.add_saved_color(paint_app.primary_color);
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label(get_text("secondary", self.language));
-                            ui.color_edit_button_srgba(&mut paint_app.secondary_color);
-                            if ui.button("+").clicked() {
-                                paint_app.add_saved_color(paint_app.secondary_color);
-                            }
-                        });
-                        
-                        ui.add_space(10.0);
-                        ui.label(get_text("zoom", self.language));
-                        ui.add(egui::Slider::new(&mut paint_app.zoom, 0.1..=10.0).logarithmic(true));
-                        
-                        // Saved colors palette
-                        if !paint_app.saved_colors.is_empty() {
-                            ui.add_space(10.0);
-                            ui.separator();
-                            ui.label(get_text("saved_colors", self.language));
+                            ui.add_space(RustiqueTheme::SPACING_SM);
                             
-                            let available_width = ui.available_width();
-                            let color_size = 24.0;
-                            let colors_per_row = (available_width / color_size).floor() as usize;
-                            let colors_count = paint_app.saved_colors.len();
+                            let btn_size = Vec2::new(40.0, 32.0);
                             
-                            for i in 0..(colors_count / colors_per_row + (if colors_count % colors_per_row > 0 { 1 } else { 0 })) {
-                                ui.horizontal(|ui| {
-                                    for j in 0..colors_per_row {
-                                        let idx = i * colors_per_row + j;
-                                        if idx < colors_count {
-                                            let color = paint_app.saved_colors[idx];
-                                            let btn = ui.add(egui::Button::new("").fill(color).min_size(Vec2::new(color_size, color_size)));
-                                            
-                                            if btn.clicked() {
-                                                paint_app.primary_color = color;
-                                            }
-                                            if btn.clicked_by(egui::PointerButton::Secondary) {
-                                                paint_app.secondary_color = color;
-                                            }
-                                            if btn.clicked_by(egui::PointerButton::Middle) {
-                                                paint_app.remove_saved_color(idx);
-                                                break;
-                                            }
-                                            
-                                            btn.on_hover_text(format!("{}\n{}\n{}",
-                                                get_text("left_click_primary", self.language),
-                                                get_text("right_click_secondary", self.language),
-                                                get_text("middle_click_delete", self.language)
-                                            ));
-                                        }
-                                    }
-                                });
+                            if ui.add(
+                                egui::Button::new(ToolIcons::home())
+                                    .fill(RustiqueTheme::SURFACE_SECONDARY)
+                                    .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                    .rounding(RustiqueTheme::rounding_medium())
+                                    .min_size(btn_size)
+                            ).clicked() {
+                                return_clicked = true;
                             }
-                        }
-                    });
-                });
-
-                // Top panel for buttons
-                let (undo_clicked, redo_clicked, return_to_menu_clicked) = egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-                    let mut return_clicked = false;
-                    let mut undo_clicked = false;
-                    let mut redo_clicked = false;
-                    
-                    ui.horizontal(|ui| {
-                        // Return to menu button
-                        if ui.button(get_text("return_to_menu", self.language)).clicked() {
-                            return_clicked = true;
-                        }
-                        
-                        if ui.button(get_text("undo", self.language)).clicked() {
-                            undo_clicked = true;
-                        }
-                        if ui.button(get_text("redo", self.language)).clicked() {
-                            redo_clicked = true;
-                        }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(get_text("shortcuts_info", self.language));
+                            
+                            ui.add_space(RustiqueTheme::SPACING_LG);
+                            
+                            if ui.add(
+                                egui::Button::new(ToolIcons::undo())
+                                    .fill(RustiqueTheme::SURFACE_SECONDARY)
+                                    .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                    .rounding(RustiqueTheme::rounding_medium())
+                                    .min_size(btn_size)
+                            ).clicked() {
+                                undo_clicked = true;
+                            }
+                            
+                            ui.add_space(RustiqueTheme::SPACING_XS);
+                            
+                            if ui.add(
+                                egui::Button::new(ToolIcons::redo())
+                                    .fill(RustiqueTheme::SURFACE_SECONDARY)
+                                    .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                    .rounding(RustiqueTheme::rounding_medium())
+                                    .min_size(btn_size)
+                            ).clicked() {
+                                redo_clicked = true;
+                            }
+                            
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.add_space(RustiqueTheme::SPACING_SM);
+                                ui.label(RustiqueTheme::muted_text("Ctrl+Z: Undo | Ctrl+Y: Redo | Ctrl+S: Save"));
+                            });
                         });
-                    });
-                    (undo_clicked, redo_clicked, return_clicked)
-                }).inner;
+                        (undo_clicked, redo_clicked, return_clicked)
+                    }).inner;
                 
                 // Handle button actions outside of the panel to avoid borrow issues
                 if undo_clicked {
