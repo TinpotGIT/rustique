@@ -795,11 +795,34 @@ impl PaintApp {
         let mut x = x0;
         let mut y = y0;
         
-        // Calculate spacing based on brush properties
-        let spacing = (self.brush_manager.active_brush().spacing * self.brush_manager.current_size).max(1.0);
+        // Calculate spacing based on brush properties and type
+        let active_brush = self.brush_manager.active_brush();
+        let base_spacing = active_brush.spacing * self.brush_manager.current_size;
+        
+        // Adjust spacing based on brush type for better quality
+        let spacing = match active_brush.brush_type {
+            brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
+                // Tighter spacing for flat brushes to ensure good coverage
+                (base_spacing * 0.5).max(0.5)
+            },
+            brush_system::BrushType::Rigger => {
+                // Very tight spacing for fine detail brush
+                (base_spacing * 0.3).max(0.3)
+            },
+            brush_system::BrushType::Fan => {
+                // Wider spacing for texture brush
+                (base_spacing * 1.5).max(1.0)
+            },
+            _ => {
+                base_spacing.max(1.0)
+            }
+        };
         let mut accumulated_distance = 0.0;
         let mut last_x = x0;
         let mut last_y = y0;
+        
+        // Always draw the first point
+        self.draw_point(x0, y0, false);
         
         loop {
             // Calculate distance from last drawn point
@@ -856,8 +879,35 @@ impl PaintApp {
         // Update brush angle based on position
         self.brush_manager.update_angle(x as f32, y as f32);
         
+        // Calculate mask size based on brush type and size
+        let base_size = self.brush_manager.current_size;
+        let active_brush = self.brush_manager.active_brush();
+        
+        // Adjust mask size based on brush type
+        let mask_size = match active_brush.brush_type {
+            brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
+                // Larger mask for flat brushes to accommodate stretched shape
+                ((base_size * 3.0).max(15.0) as usize) | 1 // Ensure odd size
+            },
+            brush_system::BrushType::Fan | brush_system::BrushType::Angle => {
+                // Medium size for special brushes
+                ((base_size * 2.5).max(12.0) as usize) | 1
+            },
+            brush_system::BrushType::Rigger => {
+                // Smaller mask for fine brush
+                ((base_size * 1.5).max(8.0) as usize) | 1
+            },
+            brush_system::BrushType::Mop => {
+                // Larger mask for diffuse brush
+                ((base_size * 3.5).max(20.0) as usize) | 1
+            },
+            _ => {
+                // Default for round and other brushes
+                ((base_size * 2.0 + 1.0) as usize) | 1
+            }
+        };
+        
         // Generate brush mask
-        let mask_size = (self.brush_manager.current_size * 2.0 + 1.0) as usize;
         let mask = self.brush_manager.generate_brush_mask(mask_size);
         
         // Apply the mask
@@ -873,7 +923,7 @@ impl PaintApp {
                 if nx >= 0 && nx < width && ny >= 0 && ny < height {
                     let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
                     
-                    if mask_value > 0.0 {
+                    if mask_value > 0.01 { // Threshold to avoid very faint marks
                         // Calculate the final color with alpha blending
                         let alpha = (color.a() as f32 * mask_value) as u8;
                         let new_color = if self.current_tool == Tool::Eraser {
@@ -907,8 +957,30 @@ impl PaintApp {
         // Update brush angle based on position
         self.brush_manager.update_angle(x as f32, y as f32);
         
+        // Calculate mask size based on brush type and size
+        let base_size = self.brush_manager.current_size;
+        let active_brush = self.brush_manager.active_brush();
+        
+        // Adjust mask size based on brush type
+        let mask_size = match active_brush.brush_type {
+            brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
+                ((base_size * 3.0).max(15.0) as usize) | 1
+            },
+            brush_system::BrushType::Fan | brush_system::BrushType::Angle => {
+                ((base_size * 2.5).max(12.0) as usize) | 1
+            },
+            brush_system::BrushType::Rigger => {
+                ((base_size * 1.5).max(8.0) as usize) | 1
+            },
+            brush_system::BrushType::Mop => {
+                ((base_size * 3.5).max(20.0) as usize) | 1
+            },
+            _ => {
+                ((base_size * 2.0 + 1.0) as usize) | 1
+            }
+        };
+        
         // Generate brush mask
-        let mask_size = (self.brush_manager.current_size * 2.0 + 1.0) as usize;
         let mask = self.brush_manager.generate_brush_mask(mask_size);
         
         // Apply the mask
@@ -924,7 +996,7 @@ impl PaintApp {
                 if nx >= 0 && nx < width && ny >= 0 && ny < height {
                     let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
                     
-                    if mask_value > 0.0 {
+                    if mask_value > 0.01 {
                         // For eraser or transparent color, set to None
                         let final_color = if self.current_tool == Tool::Eraser || fill_color.is_none() {
                             None

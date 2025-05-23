@@ -410,49 +410,126 @@ impl BrushManager {
         let center = size as f32 / 2.0;
         let radius = center;
         
-        // Facteurs d'étirement basés sur l'angle
-        let (width_factor, height_factor) = active.calculate_shape(self.current_angle, 1.0);
+        // Angle effectif avec la rotation de base
+        let effective_angle = self.current_angle + active.base_rotation;
+        let cos_a = effective_angle.cos();
+        let sin_a = effective_angle.sin();
         
-        // Calculer le masque pour chaque pixel
+        // Calculer le masque pour chaque pixel selon le type de pinceau
         for y in 0..size {
             for x in 0..size {
                 // Position relative au centre
                 let rx = (x as f32 - center) / radius;
                 let ry = (y as f32 - center) / radius;
                 
-                // Appliquer l'étirement et la rotation
-                let angle = self.current_angle;
-                let cos_a = angle.cos();
-                let sin_a = angle.sin();
+                let mut value = 0.0;
                 
-                let rx_rot = rx * cos_a - ry * sin_a;
-                let ry_rot = rx * sin_a + ry * cos_a;
+                match active.brush_type {
+                    BrushType::Round => {
+                        // Pinceau rond classique
+                        let dist = (rx * rx + ry * ry).sqrt();
+                        value = (1.0 - dist).max(0.0);
+                    },
+                    
+                    BrushType::Flat | BrushType::Bright => {
+                        // Pinceau rectangulaire avec rotation
+                        let rx_rot = rx * cos_a - ry * sin_a;
+                        let ry_rot = rx * sin_a + ry * cos_a;
+                        
+                        let width_scale = if active.brush_type == BrushType::Flat { 0.25 } else { 0.35 };
+                        let height_scale = 1.0;
+                        
+                        if rx_rot.abs() <= width_scale && ry_rot.abs() <= height_scale {
+                            let edge_x = 1.0 - (rx_rot.abs() / width_scale);
+                            let edge_y = 1.0 - (ry_rot.abs() / height_scale);
+                            value = edge_x.min(edge_y);
+                        }
+                    },
+                    
+                    BrushType::Filbert => {
+                        // Forme ovale arrondie avec rotation
+                        let rx_rot = rx * cos_a - ry * sin_a;
+                        let ry_rot = rx * sin_a + ry * cos_a;
+                        
+                        let ellipse_dist = (rx_rot * rx_rot) / (0.6 * 0.6) + (ry_rot * ry_rot) / (1.0 * 1.0);
+                        value = (1.0 - ellipse_dist.sqrt()).max(0.0);
+                    },
+                    
+                    BrushType::Fan => {
+                        // Forme en éventail
+                        let angle_from_center = ry.atan2(rx);
+                        let dist = (rx * rx + ry * ry).sqrt();
+                        
+                        // Créer des "rayons" en éventail
+                        let fan_angle = (angle_from_center + PI) * 5.0; // 5 rayons
+                        let ray_intensity = (fan_angle.sin().abs() * 2.0).min(1.0);
+                        
+                        if dist <= 1.0 && ray_intensity > 0.3 {
+                            value = (1.0 - dist) * ray_intensity;
+                        }
+                    },
+                    
+                    BrushType::Angle => {
+                        // Pinceau biseauté avec angle
+                        let rx_rot = rx * cos_a - ry * sin_a;
+                        let ry_rot = rx * sin_a + ry * cos_a;
+                        
+                        // Forme triangulaire/biseautée
+                        if rx_rot >= -0.8 && rx_rot <= 0.4 && ry_rot.abs() <= 0.6 {
+                            let triangle_factor = (0.4 - rx_rot) / 1.2;
+                            let edge_y = 1.0 - (ry_rot.abs() / 0.6);
+                            value = triangle_factor.min(edge_y).max(0.0);
+                        }
+                    },
+                    
+                    BrushType::Mop => {
+                        // Large pinceau diffus
+                        let dist = (rx * rx + ry * ry).sqrt();
+                        value = (1.2 - dist).max(0.0);
+                        // Adoucir les bords plus que les autres pinceaux
+                        value = value.powf(0.5);
+                    },
+                    
+                    BrushType::Rigger => {
+                        // Pinceau très fin
+                        let rx_rot = rx * cos_a - ry * sin_a;
+                        let ry_rot = rx * sin_a + ry * cos_a;
+                        
+                        if rx_rot.abs() <= 0.1 && ry_rot.abs() <= 0.8 {
+                            let edge_x = 1.0 - (rx_rot.abs() / 0.1);
+                            let edge_y = 1.0 - (ry_rot.abs() / 0.8);
+                            value = edge_x.min(edge_y);
+                        }
+                    },
+                    
+                    BrushType::Custom => {
+                        // Comportement personnalisable - pour l'instant comme un rond modifié
+                        let dist = (rx * rx + ry * ry).sqrt();
+                        value = (1.0 - dist).max(0.0);
+                    },
+                }
                 
-                let rx_stretched = rx_rot / width_factor;
-                let ry_stretched = ry_rot / height_factor;
-                
-                // Distance par rapport au centre (normalisée)
-                let dist = (rx_stretched * rx_stretched + ry_stretched * ry_stretched).sqrt();
-                
-                // Valeur de base du masque (0 à 1, où 1 est au centre et 0 est à l'extérieur)
-                let mut value = (1.0 - dist).max(0.0);
-                
-                // Appliquer la dureté
-                value = if dist >= 1.0 {
-                    0.0
-                } else {
-                    value.powf(1.0 / (active.hardness + 0.01))
-                };
+                // Appliquer la dureté pour tous les types
+                if value > 0.0 {
+                    value = value.powf(1.0 / (active.hardness.max(0.1)));
+                }
                 
                 // Appliquer de la texture/bruit si nécessaire
-                if active.texture_strength > 0.0 {
-                    // Bruit simple basé sur la position
-                    let noise = ((x as f32 * 0.1).sin() * (y as f32 * 0.1).cos()).abs();
-                    value = value * (1.0 - active.texture_strength * noise);
+                if active.texture_strength > 0.0 && value > 0.0 {
+                    let noise = ((x as f32 * 0.3).sin() * (y as f32 * 0.3).cos() + 
+                                (x as f32 * 0.7).cos() * (y as f32 * 0.5).sin()) * 0.5;
+                    let noise_factor = 1.0 - active.texture_strength * noise.abs();
+                    value *= noise_factor.max(0.2); // Garder au moins 20% de la valeur
+                }
+                
+                // Appliquer la sensibilité à l'angle pour moduler l'intensité
+                if active.angle_sensitivity > 0.0 {
+                    let angle_factor = 1.0 - active.angle_sensitivity * 0.3 * (effective_angle.sin().abs());
+                    value *= angle_factor.max(0.3);
                 }
                 
                 // Stocker la valeur dans le masque
-                mask[y * size + x] = value;
+                mask[y * size + x] = value.clamp(0.0, 1.0);
             }
         }
         
@@ -677,63 +754,63 @@ impl BrushManager {
             BrushType::Round => {
                 // Cercle pour pinceau rond
                 let center = rect.center();
-                let radius = rect.width() * 0.3;
+                let radius = rect.width() * 0.25;
                 painter.circle_filled(center, radius, Color32::BLACK);
             },
             BrushType::Flat => {
-                // Rectangle horizontal pour pinceau plat
+                // Rectangle horizontal très plat pour pinceau plat
                 let center = rect.center();
-                let width = rect.width() * 0.6;
-                let height = rect.height() * 0.15;
+                let width = rect.width() * 0.7;
+                let height = rect.height() * 0.1;
                 let rect = Rect::from_center_size(center, Vec2::new(width, height));
-                painter.rect_filled(rect, 0.0, Color32::BLACK);
+                painter.rect_filled(rect, 1.0, Color32::BLACK);
             },
             BrushType::Bright => {
-                // Rectangle horizontal plus court pour pinceau bright
+                // Rectangle horizontal plus court et plus épais que Flat
                 let center = rect.center();
                 let width = rect.width() * 0.5;
                 let height = rect.height() * 0.15;
                 let rect = Rect::from_center_size(center, Vec2::new(width, height));
-                painter.rect_filled(rect, 0.0, Color32::BLACK);
+                painter.rect_filled(rect, 1.0, Color32::BLACK);
             },
             BrushType::Filbert => {
-                // Forme arrondie aux extrémités
+                // Forme ovale arrondie
                 let center = rect.center();
-                let width = rect.width() * 0.6;
-                let height = rect.height() * 0.2;
+                let width = rect.width() * 0.5;
+                let height = rect.height() * 0.3;
                 let rect = Rect::from_center_size(center, Vec2::new(width, height));
-                painter.rect_filled(rect, 8.0, Color32::BLACK);
+                painter.rect_filled(rect, 12.0, Color32::BLACK);
             },
             BrushType::Fan => {
-                // Lignes en éventail
+                // Lignes en éventail plus réalistes
                 let center = rect.center();
                 let radius = rect.width() * 0.3;
-                let angles = [-30.0, -15.0, 0.0, 15.0, 30.0]; // en degrés
+                let angles = [-25.0, -12.0, 0.0, 12.0, 25.0]; // en degrés
                 
-                for angle_deg in angles.iter() {
-                    // Convertir explicitement en f32 pour éviter l'ambiguïté
+                for (i, angle_deg) in angles.iter().enumerate() {
                     let angle = (*angle_deg as f32).to_radians();
-                    let dir_x = angle.sin() * radius;
-                    let dir_y = -angle.cos() * radius;
+                    let length = radius * (0.8 + 0.2 * (2.0 - i as f32).abs() / 2.0); // Longueurs variables
+                    let dir_x = angle.sin() * length;
+                    let dir_y = -angle.cos() * length;
+                    
+                    let stroke_width = if i == 2 { 2.5 } else { 1.5 }; // Centre plus épais
                     
                     painter.line_segment(
                         [center, Pos2::new(center.x + dir_x, center.y + dir_y)],
-                        Stroke::new(2.0, Color32::BLACK)
+                        Stroke::new(stroke_width, Color32::BLACK)
                     );
                 }
             },
             BrushType::Angle => {
-                // Forme angulaire
+                // Forme biseautée plus réaliste
                 let center = rect.center();
-                let width = rect.width() * 0.5;
-                let height = rect.height() * 0.15;
+                let size = rect.width() * 0.15;
                 
-                // Définir un losange incliné
+                // Créer une forme triangulaire inclinée
                 let points = vec![
-                    Pos2::new(center.x - width * 0.4, center.y),
-                    Pos2::new(center.x, center.y - height * 2.0),
-                    Pos2::new(center.x + width * 0.4, center.y),
-                    Pos2::new(center.x, center.y + height * 2.0),
+                    Pos2::new(center.x - size * 2.0, center.y),
+                    Pos2::new(center.x + size * 0.8, center.y - size * 1.5),
+                    Pos2::new(center.x + size * 0.8, center.y + size * 1.5),
                 ];
                 
                 painter.add(egui::Shape::convex_polygon(
@@ -743,50 +820,59 @@ impl BrushManager {
                 ));
             },
             BrushType::Mop => {
-                // Large forme diffuse
+                // Large forme diffuse avec dégradé
                 let center = rect.center();
                 let radius = rect.width() * 0.35;
                 
-                // Cercle avec dégradé pour simuler un bord flou
-                for r in (0..10).rev() {
-                    let alpha = (r as f32 / 10.0 * 255.0) as u8;
+                // Dessiner plusieurs cercles concentriques pour l'effet flou
+                for r in (1..=8).rev() {
+                    let alpha = (r as f32 / 8.0 * 180.0) as u8;
                     let color = Color32::from_rgba_unmultiplied(0, 0, 0, alpha);
-                    let r_scaled = radius * (1.0 - r as f32 * 0.1);
+                    let r_scaled = radius * (r as f32 / 8.0);
                     painter.circle_filled(center, r_scaled, color);
                 }
             },
             BrushType::Rigger => {
-                // Ligne très fine
+                // Ligne très fine et longue
                 let center = rect.center();
-                let height = rect.height() * 0.7;
+                let height = rect.height() * 0.8;
                 
                 painter.line_segment(
                     [
                         Pos2::new(center.x, center.y - height * 0.5),
                         Pos2::new(center.x, center.y + height * 0.5)
                     ],
-                    Stroke::new(1.0, Color32::BLACK)
+                    Stroke::new(1.5, Color32::BLACK)
                 );
             },
             BrushType::Custom => {
-                // Forme personnalisée ou icône de texture
+                // Motif de texture personnalisée
                 let center = rect.center();
-                let size = rect.width() * 0.25;
+                let size = rect.width() * 0.12;
                 
-                // Dessiner un symbole de texture (grille)
+                // Dessiner un motif en damier pour représenter la texture
                 for i in -1..=1 {
                     for j in -1..=1 {
                         if (i + j) % 2 == 0 {
-                            let x = center.x + i as f32 * size;
-                            let y = center.y + j as f32 * size;
+                            let x = center.x + i as f32 * size * 1.2;
+                            let y = center.y + j as f32 * size * 1.2;
                             let small_rect = Rect::from_center_size(
                                 Pos2::new(x, y),
-                                Vec2::splat(size * 0.8)
+                                Vec2::splat(size)
                             );
-                            painter.rect_filled(small_rect, 0.0, Color32::from_gray(60));
+                            painter.rect_filled(small_rect, 2.0, Color32::from_gray(60));
                         }
                     }
                 }
+                
+                // Ajouter un petit symbole au centre
+                painter.text(
+                    center,
+                    egui::Align2::CENTER_CENTER,
+                    "T",
+                    egui::FontId::proportional(12.0),
+                    Color32::BLACK,
+                );
             }
         }
     }
