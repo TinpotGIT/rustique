@@ -795,26 +795,23 @@ impl PaintApp {
         let mut x = x0;
         let mut y = y0;
         
-        // Calculate spacing based on brush properties and type
+        // Calculate spacing based on brush properties and type - très réduit pour fluidité
         let active_brush = self.brush_manager.active_brush();
         let base_spacing = active_brush.spacing * self.brush_manager.current_size;
         
-        // Adjust spacing based on brush type for better quality
+        // Espacement encore plus réduit pour tous les pinceaux
         let spacing = match active_brush.brush_type {
             brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
-                // Tighter spacing for flat brushes to ensure good coverage
-                (base_spacing * 0.5).max(0.5)
+                (base_spacing * 0.1).max(0.1)
             },
             brush_system::BrushType::Rigger => {
-                // Very tight spacing for fine detail brush
-                (base_spacing * 0.3).max(0.3)
+                (base_spacing * 0.05).max(0.05)
             },
             brush_system::BrushType::Fan => {
-                // Wider spacing for texture brush
-                (base_spacing * 1.5).max(1.0)
+                (base_spacing * 0.2).max(0.2)
             },
             _ => {
-                base_spacing.max(1.0)
+                (base_spacing * 0.1).max(0.1)
             }
         };
         let mut accumulated_distance = 0.0;
@@ -860,11 +857,119 @@ impl PaintApp {
         self.last_action_time = Instant::now();
         self.texture_dirty = true;
     }
-
-    // Draw a single point with optimized circular brush
-    fn draw_point(&mut self, x: i32, y: i32, use_secondary: bool) {
+    
+    // Draw a smooth line with anti-aliasing for improved quality
+    fn draw_smooth_line(&mut self, start: (i32, i32), end: (i32, i32), _color: Color32) {
+        // Update brush manager size if it's different
+        if self.brush_manager.current_size != self.brush_size as f32 {
+            self.brush_manager.current_size = self.brush_size as f32;
+        }
+        
+        // Ensure active layer is visible before drawing
+        if self.current_state.active_layer_index < self.current_state.layers.len() && 
+           !self.current_state.layers[self.current_state.active_layer_index].visible {
+            return;
+        }
+        
+        let (x0, y0) = start;
+        let (x1, y1) = end;
+        
+        // Calculate distance for smooth interpolation
+        let dx = (x1 - x0) as f32;
+        let dy = (y1 - y0) as f32;
+        let distance = (dx * dx + dy * dy).sqrt();
+        
+        if distance < 1.0 {
+            // Very short line, just draw one point
+            self.draw_point(x0, y0, false);
+            return;
+        }
+        
+        // Calculate spacing based on brush properties and type
+        let active_brush = self.brush_manager.active_brush();
+        let base_spacing = active_brush.spacing * self.brush_manager.current_size;
+        
+        // Adjust spacing based on brush type for better quality
+        let spacing = match active_brush.brush_type {
+            brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
+                // Tighter spacing for flat brushes to ensure good coverage
+                (base_spacing * 0.2).max(0.2)
+            },
+            brush_system::BrushType::Rigger => {
+                // Very tight spacing for fine detail brush
+                (base_spacing * 0.1).max(0.1)
+            },
+            brush_system::BrushType::Fan => {
+                // Wider spacing for texture brush but still decent
+                (base_spacing * 0.6).max(0.6)
+            },
+            brush_system::BrushType::Mop => {
+                // Medium spacing for soft brush
+                (base_spacing * 0.3).max(0.3)
+            },
+            _ => {
+                (base_spacing * 0.3).max(0.3)
+            }
+        };
+        
+        // Number of points to interpolate
+        let num_points = (distance / spacing).ceil() as i32;
+        
+        // Smooth interpolation using floating point
+        for i in 0..=num_points {
+            let t = if num_points > 0 { i as f32 / num_points as f32 } else { 0.0 };
+            
+            // Linear interpolation with sub-pixel accuracy
+            let x = x0 as f32 + dx * t;
+            let y = y0 as f32 + dy * t;
+            
+            // Draw point with anti-aliasing by drawing at fractional positions
+            self.draw_smooth_point(x, y, false);
+        }
+        
+        self.last_action_time = Instant::now();
+        self.texture_dirty = true;
+    }
+    
+    // Draw a point with sub-pixel accuracy for smoother lines
+    fn draw_smooth_point(&mut self, x: f32, y: f32, use_secondary: bool) {
         let color = if use_secondary { self.secondary_color } else { self.primary_color };
         
+        // Get the four surrounding integer positions
+        let x0 = x.floor() as i32;
+        let y0 = y.floor() as i32;
+        let x1 = x0 + 1;
+        let y1 = y0 + 1;
+        
+        // Calculate sub-pixel weights
+        let wx = x - x.floor();
+        let wy = y - y.floor();
+        
+        // Draw on the four surrounding pixels with weighted intensity
+        let weights = [
+            (1.0 - wx) * (1.0 - wy), // top-left
+            wx * (1.0 - wy),         // top-right
+            (1.0 - wx) * wy,         // bottom-left
+            wx * wy,                 // bottom-right
+        ];
+        
+        let positions = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)];
+        
+        for (i, &(px, py)) in positions.iter().enumerate() {
+            if weights[i] > 0.0 { // Seuil minimal pour anti-aliasing
+                let weighted_color = Color32::from_rgba_unmultiplied(
+                    color.r(),
+                    color.g(), 
+                    color.b(),
+                    ((color.a() as f32) * weights[i]) as u8
+                );
+                self.draw_weighted_point(px, py, weighted_color);
+            }
+        }
+    }
+    
+    // Draw a point with specific weighted color for anti-aliasing
+    fn draw_weighted_point(&mut self, x: i32, y: i32, weighted_color: Color32) {
         // Update brush manager size if it's different
         if self.brush_manager.current_size != self.brush_size as f32 {
             self.brush_manager.current_size = self.brush_size as f32;
@@ -879,31 +984,26 @@ impl PaintApp {
         // Update brush angle based on position
         self.brush_manager.update_angle(x as f32, y as f32);
         
-        // Calculate mask size based on brush type and size
+        // Calculate mask size based on brush type and size - simplifié
         let base_size = self.brush_manager.current_size;
         let active_brush = self.brush_manager.active_brush();
         
-        // Adjust mask size based on brush type
+        // Tailles de masque plus petites et uniformes
         let mask_size = match active_brush.brush_type {
             brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
-                // Larger mask for flat brushes to accommodate stretched shape
-                ((base_size * 3.0).max(15.0) as usize) | 1 // Ensure odd size
+                ((base_size * 2.0).max(7.0) as usize) | 1
             },
             brush_system::BrushType::Fan | brush_system::BrushType::Angle => {
-                // Medium size for special brushes
-                ((base_size * 2.5).max(12.0) as usize) | 1
+                ((base_size * 2.0).max(7.0) as usize) | 1
             },
             brush_system::BrushType::Rigger => {
-                // Smaller mask for fine brush
-                ((base_size * 1.5).max(8.0) as usize) | 1
+                ((base_size * 1.5).max(5.0) as usize) | 1
             },
             brush_system::BrushType::Mop => {
-                // Larger mask for diffuse brush
-                ((base_size * 3.5).max(20.0) as usize) | 1
+                ((base_size * 2.5).max(9.0) as usize) | 1
             },
             _ => {
-                // Default for round and other brushes
-                ((base_size * 2.0 + 1.0) as usize) | 1
+                ((base_size * 2.0).max(7.0) as usize) | 1
             }
         };
         
@@ -923,7 +1023,89 @@ impl PaintApp {
                 if nx >= 0 && nx < width && ny >= 0 && ny < height {
                     let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
                     
-                    if mask_value > 0.01 { // Threshold to avoid very faint marks
+                    if mask_value > 0.0 { // Seuil minimal pour maximum de couverture
+                        // Calculate the final color with weighted alpha and mask
+                        let final_alpha = ((weighted_color.a() as f32) * mask_value) as u8;
+                        let new_color = if self.current_tool == Tool::Eraser {
+                            None
+                        } else if final_alpha > 0 {
+                            Some(Color32::from_rgba_unmultiplied(
+                                weighted_color.r(), 
+                                weighted_color.g(), 
+                                weighted_color.b(), 
+                                final_alpha
+                            ))
+                        } else {
+                            None
+                        };
+                        
+                        self.record_change(nx as usize, ny as usize, new_color);
+                    }
+                }
+            }
+        }
+        
+        self.texture_dirty = true;
+    }
+
+    // Draw a single point with optimized circular brush
+    fn draw_point(&mut self, x: i32, y: i32, use_secondary: bool) {
+        let color = if use_secondary { self.secondary_color } else { self.primary_color };
+        
+        // Update brush manager size if it's different
+        if self.brush_manager.current_size != self.brush_size as f32 {
+            self.brush_manager.current_size = self.brush_size as f32;
+        }
+        
+        // Ensure active layer is visible before drawing
+        if self.current_state.active_layer_index < self.current_state.layers.len() && 
+           !self.current_state.layers[self.current_state.active_layer_index].visible {
+            return;
+        }
+        
+        // Update brush angle based on position
+        self.brush_manager.update_angle(x as f32, y as f32);
+        
+        // Calculate mask size based on brush type and size - simplifié
+        let base_size = self.brush_manager.current_size;
+        let active_brush = self.brush_manager.active_brush();
+        
+        // Tailles de masque plus petites et uniformes
+        let mask_size = match active_brush.brush_type {
+            brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
+                ((base_size * 2.0).max(7.0) as usize) | 1
+            },
+            brush_system::BrushType::Fan | brush_system::BrushType::Angle => {
+                ((base_size * 2.0).max(7.0) as usize) | 1
+            },
+            brush_system::BrushType::Rigger => {
+                ((base_size * 1.5).max(5.0) as usize) | 1
+            },
+            brush_system::BrushType::Mop => {
+                ((base_size * 2.5).max(9.0) as usize) | 1
+            },
+            _ => {
+                ((base_size * 2.0).max(7.0) as usize) | 1
+            }
+        };
+        
+        // Generate brush mask
+        let mask = self.brush_manager.generate_brush_mask(mask_size);
+        
+        // Apply the mask
+        let center = mask_size as i32 / 2;
+        let width = self.current_state.width as i32;
+        let height = self.current_state.height as i32;
+        
+        for dy in 0..mask_size as i32 {
+            for dx in 0..mask_size as i32 {
+                let nx = x + dx - center;
+                let ny = y + dy - center;
+                
+                if nx >= 0 && nx < width && ny >= 0 && ny < height {
+                    let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
+                    
+                    if mask_value > 0.0 { // Seuil minimal pour maximum de couverture
                         // Calculate the final color with alpha blending
                         let alpha = (color.a() as f32 * mask_value) as u8;
                         let new_color = if self.current_tool == Tool::Eraser {
@@ -961,22 +1143,22 @@ impl PaintApp {
         let base_size = self.brush_manager.current_size;
         let active_brush = self.brush_manager.active_brush();
         
-        // Adjust mask size based on brush type
+        // Tailles de masque plus petites et uniformes
         let mask_size = match active_brush.brush_type {
             brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
-                ((base_size * 3.0).max(15.0) as usize) | 1
+                ((base_size * 2.0).max(7.0) as usize) | 1
             },
             brush_system::BrushType::Fan | brush_system::BrushType::Angle => {
-                ((base_size * 2.5).max(12.0) as usize) | 1
+                ((base_size * 2.0).max(7.0) as usize) | 1
             },
             brush_system::BrushType::Rigger => {
-                ((base_size * 1.5).max(8.0) as usize) | 1
+                ((base_size * 1.5).max(5.0) as usize) | 1
             },
             brush_system::BrushType::Mop => {
-                ((base_size * 3.5).max(20.0) as usize) | 1
+                ((base_size * 2.5).max(9.0) as usize) | 1
             },
             _ => {
-                ((base_size * 2.0 + 1.0) as usize) | 1
+                ((base_size * 2.0).max(7.0) as usize) | 1
             }
         };
         
@@ -996,7 +1178,7 @@ impl PaintApp {
                 if nx >= 0 && nx < width && ny >= 0 && ny < height {
                     let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
                     
-                    if mask_value > 0.01 {
+                    if mask_value > 0.0 { // Seuil minimal pour maximum de couverture
                         // For eraser or transparent color, set to None
                         let final_color = if self.current_tool == Tool::Eraser || fill_color.is_none() {
                             None

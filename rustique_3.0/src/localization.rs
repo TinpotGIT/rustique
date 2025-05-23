@@ -99,6 +99,10 @@ fn get_french_text(key: &str) -> String {
         ("brush_mop", "Mop"),
         ("brush_rigger", "Rigger"),
         ("brush_custom", "Personnalisé"),
+        ("load_texture", "Charger Texture"),
+        ("select_brush_texture", "Sélectionner une texture de pinceau"),
+        ("custom_brushes", "Pinceaux personnalisés"),
+        ("delete", "Supprimer"),
     ].iter().cloned().collect();
     
     translations.get(key).unwrap_or(&key).to_string()
@@ -190,6 +194,10 @@ fn get_english_text(key: &str) -> String {
         ("brush_mop", "Mop"),
         ("brush_rigger", "Rigger"),
         ("brush_custom", "Custom"),
+        ("load_texture", "Load Texture"),
+        ("select_brush_texture", "Select brush texture"),
+        ("custom_brushes", "Custom Brushes"),
+        ("delete", "Delete"),
     ].iter().cloned().collect();
     
     translations.get(key).unwrap_or(&key).to_string()
