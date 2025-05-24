@@ -221,6 +221,7 @@ struct PaintApp {
     current_tool: Tool,
     primary_color: Color32,
     secondary_color: Color32,
+    using_secondary_color: bool,
     saved_colors: Vec<Color32>,
     brush_size: i32,
     eraser_size: i32,
@@ -254,6 +255,7 @@ impl PaintApp {
             current_tool: Tool::Brush,
             primary_color: Color32::BLACK,
             secondary_color: Color32::WHITE,
+            using_secondary_color: false,
             saved_colors: Vec::new(),
             brush_size: 3,
             eraser_size: 3,
@@ -336,6 +338,7 @@ impl PaintApp {
             current_tool: Tool::Brush,
             primary_color,
             secondary_color,
+            using_secondary_color: false,
             saved_colors,
             brush_size: file.brush_size,
             eraser_size: file.eraser_size,
@@ -462,6 +465,7 @@ impl PaintApp {
                             current_tool: Tool::Brush,
                             primary_color: Color32::BLACK,
                             secondary_color: Color32::WHITE,
+                            using_secondary_color: false,
                             saved_colors: Vec::new(),
                             brush_size: 3,
                             eraser_size: 3,
@@ -1053,8 +1057,8 @@ impl PaintApp {
     }
 
     // Draw a single point with optimized circular brush
-    fn draw_point(&mut self, x: i32, y: i32, use_secondary: bool) {
-        let color = if use_secondary { self.secondary_color } else { self.primary_color };
+    fn draw_point(&mut self, x: i32, y: i32, _use_secondary: bool) {
+        let color = if self.using_secondary_color { self.secondary_color } else { self.primary_color };
         
         // Update brush manager size if it's different
         if self.brush_manager.current_size != self.brush_size as f32 {
@@ -1206,7 +1210,7 @@ impl PaintApp {
     }
 
     // Optimized paint bucket fill
-    fn paint_bucket(&mut self, x: usize, y: usize, use_secondary: bool) {
+    fn paint_bucket(&mut self, x: usize, y: usize, _use_secondary: bool) {
         if x >= self.current_state.width || y >= self.current_state.height {
             return;
         }
@@ -1218,7 +1222,7 @@ impl PaintApp {
         }
         
         let target_color = self.current_state.get_from_active_layer(x, y);
-        let color = if use_secondary { self.secondary_color } else { self.primary_color };
+        let color = if self.using_secondary_color { self.secondary_color } else { self.primary_color };
         let fill_color = if self.current_tool == Tool::Eraser {
             None
         } else {
@@ -1255,9 +1259,9 @@ impl PaintApp {
     }
 
     // Pick a color from the canvas
-    fn pick_color(&mut self, x: usize, y: usize, use_secondary: bool) {
+    fn pick_color(&mut self, x: usize, y: usize, _use_secondary: bool) {
         if let Some(color) = self.current_state.get(x, y) {
-            if use_secondary {
+            if self.using_secondary_color {
                 self.secondary_color = color;
             } else {
                 self.primary_color = color;
@@ -1871,26 +1875,42 @@ impl eframe::App for MyApp {
                                 let primary_btn = ui.add(
                                     egui::Button::new("")
                                         .fill(paint_app.primary_color)
-                                        .stroke(egui::Stroke::new(2.0, RustiqueTheme::TEXT_PRIMARY))
+                                        .stroke(egui::Stroke::new(
+                                            if !paint_app.using_secondary_color { 3.0 } else { 1.0 }, 
+                                            if !paint_app.using_secondary_color { 
+                                                RustiqueTheme::ACCENT_PRIMARY 
+                                            } else { 
+                                                RustiqueTheme::TEXT_PRIMARY 
+                                            }
+                                        ))
                                         .rounding(RustiqueTheme::rounding_small())
                                         .min_size(Vec2::new(color_size, color_size))
                                 );
                                 if primary_btn.clicked() {
+                                    paint_app.using_secondary_color = false;
                                 }
-                                primary_btn.on_hover_text("Primary Color");
+                                primary_btn.on_hover_text("Primary Color (Click to use)");
                                 
                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                 
                                 let secondary_btn = ui.add(
                                     egui::Button::new("")
                                         .fill(paint_app.secondary_color)
-                                        .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                        .stroke(egui::Stroke::new(
+                                            if paint_app.using_secondary_color { 3.0 } else { 1.0 }, 
+                                            if paint_app.using_secondary_color { 
+                                                RustiqueTheme::ACCENT_PRIMARY 
+                                            } else { 
+                                                RustiqueTheme::BORDER_LIGHT 
+                                            }
+                                        ))
                                         .rounding(RustiqueTheme::rounding_small())
                                         .min_size(Vec2::new(color_size * 0.8, color_size * 0.8))
                                 );
                                 if secondary_btn.clicked() {
+                                    paint_app.using_secondary_color = true;
                                 }
-                                secondary_btn.on_hover_text("Secondary Color");
+                                secondary_btn.on_hover_text("Secondary Color (Click to use)");
                             });
                         });
                     });

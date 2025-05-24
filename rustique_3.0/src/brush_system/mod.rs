@@ -786,14 +786,24 @@ impl BrushManager {
                     
                     self.draw_brush_preview(ui, preview_rect, &brush_type);
                     
-                    // Afficher le nom du pinceau
+                    // Afficher le nom du pinceau avec meilleure lisibilité
                     let text_pos = Pos2::new(rect.center().x, rect.max.y - 12.0);
+                    let text_rect = Rect::from_center_size(text_pos, Vec2::new(cell_size.x - 4.0, 16.0));
+                    
+                    // Fond semi-transparent pour le texte
+                    ui.painter().rect_filled(
+                        text_rect,
+                        2.0,
+                        egui::Color32::from_black_alpha(120)
+                    );
+                    
+                    // Texte avec meilleure lisibilité
                     ui.painter().text(
                         text_pos,
                         egui::Align2::CENTER_CENTER,
                         brush_type.get_name(language),
-                        egui::FontId::proportional(11.0),
-                        ui.style().visuals.text_color(),
+                        egui::FontId::proportional(12.0),
+                        egui::Color32::WHITE,
                     );
                     
                     // Gérer le clic
