@@ -397,17 +397,59 @@ impl BrushManager {
             
             Some(texture)
         } else {
+            eprintln!("Failed to load brush texture: {}", path);
             None
         }
     }
     
-    // Générer un masque de pinceau personnalisé à partir d'une texture
-    pub fn generate_custom_brush_mask(&self, size: usize, texture_path: &str) -> Vec<f32> {
+    // Générer un masque de pinceau personnalisé à partir d'une texture chargée
+    pub fn generate_texture_brush_mask(&self, size: usize, texture_path: &str) -> Vec<f32> {
         let mut mask = vec![0.0; size * size];
         
-        // Pour l'instant, simuler avec un motif procédural complexe
-        // Dans une vraie implémentation, on chargerait l'image ici
+        // Essayer de charger l'image directement pour la conversion en masque
+        if let Ok(image) = image::open(texture_path) {
+            let image_gray = image.to_luma8();
+            let (img_width, img_height) = (image_gray.width() as f32, image_gray.height() as f32);
+            
+            let center = size as f32 / 2.0;
+            
+            for y in 0..size {
+                for x in 0..size {
+                    let rx = (x as f32 - center) / center;
+                    let ry = (y as f32 - center) / center;
+                    let dist = (rx * rx + ry * ry).sqrt();
+                    
+                    if dist <= 1.0 {
+                        // Mapper les coordonnées du masque vers l'image
+                        let img_x = ((rx + 1.0) * 0.5 * img_width) as u32;
+                        let img_y = ((ry + 1.0) * 0.5 * img_height) as u32;
+                        
+                        if img_x < img_width as u32 && img_y < img_height as u32 {
+                            let pixel = image_gray.get_pixel(img_x, img_y);
+                            let intensity = pixel[0] as f32 / 255.0;
+                            
+                            // Inverser l'intensité pour que le noir soit opaque
+                            let opacity = 1.0 - intensity;
+                            
+                            // Appliquer un masque circulaire pour limiter la forme
+                            let fade = (1.0 - dist).max(0.0);
+                            mask[y * size + x] = opacity * fade;
+                        }
+                    }
+                }
+            }
+        } else {
+            // Fallback vers des motifs procéduraux améliorés
+            self.generate_procedural_texture_mask(size, texture_path, &mut mask);
+        }
+        
+        mask
+    }
+    
+    // Générer des motifs procéduraux améliorés pour les textures
+    fn generate_procedural_texture_mask(&self, size: usize, texture_path: &str, mask: &mut Vec<f32>) {
         let center = size as f32 / 2.0;
+        let filename = texture_path.to_lowercase();
         
         for y in 0..size {
             for x in 0..size {
@@ -416,47 +458,89 @@ impl BrushManager {
                 let dist = (rx * rx + ry * ry).sqrt();
                 
                 if dist <= 1.0 {
-                    // Simuler différents motifs selon le nom du fichier
-                    let value = if texture_path.contains("splatter") || texture_path.contains("éclaboussure") {
-                        // Motif d'éclaboussure
-                        let noise1 = ((rx * 10.0).sin() * (ry * 10.0).cos()).abs();
-                        let noise2 = ((rx * 15.0 + ry * 8.0).sin()).abs();
-                        let splatter = noise1 * noise2;
-                        if splatter > 0.3 { (1.0 - dist) * splatter } else { 0.0 }
-                    } else if texture_path.contains("grunge") || texture_path.contains("rugueux") {
-                        // Motif grunge
-                        let noise = ((rx * 8.0).sin() + (ry * 6.0).cos() + (rx * ry * 12.0).sin()) * 0.3;
-                        (1.0 - dist + noise).max(0.0)
-                    } else if texture_path.contains("stipple") || texture_path.contains("pointillé") {
-                        // Motif pointillé
-                        let grid_x = (rx * 6.0).floor();
-                        let grid_y = (ry * 6.0).floor();
+                    let value = if filename.contains("splatter") || filename.contains("éclaboussure") {
+                        // Motif d'éclaboussure amélioré
+                        let noise1 = ((rx * 12.0).sin() * (ry * 8.0).cos()).abs();
+                        let noise2 = ((rx * 6.0 + ry * 10.0).sin()).abs();
+                        let noise3 = ((rx * 15.0 - ry * 5.0).cos()).abs();
+                        let splatter = (noise1 * noise2 + noise3 * 0.3).min(1.0);
+                        
+                        if splatter > 0.4 { 
+                            (1.0 - dist) * splatter * 0.8 
+                        } else { 
+                            0.0 
+                        }
+                    } else if filename.contains("grunge") || filename.contains("rugueux") {
+                        // Motif grunge plus détaillé
+                        let noise1 = ((rx * 10.0).sin() + (ry * 8.0).cos()) * 0.5;
+                        let noise2 = ((rx * 16.0 + ry * 12.0).sin()) * 0.3;
+                        let noise3 = ((rx * ry * 20.0).sin()) * 0.2;
+                        let combined = noise1 + noise2 + noise3;
+                        
+                        ((1.0 - dist + combined) * 0.7).max(0.0).min(1.0)
+                    } else if filename.contains("stipple") || filename.contains("pointillé") {
+                        // Motif pointillé plus réaliste
+                        let grid_size = 4.0;
+                        let grid_x = (rx * grid_size).floor();
+                        let grid_y = (ry * grid_size).floor();
                         let hash = ((grid_x + grid_y * 7.0) * 123.456).sin().abs();
-                        if hash > 0.6 { 1.0 - dist } else { 0.0 }
+                        let dot_size = hash * 0.6 + 0.2;
+                        
+                        let local_x = (rx * grid_size) - grid_x;
+                        let local_y = (ry * grid_size) - grid_y;
+                        let local_dist = ((local_x - 0.5).powf(2.0) + (local_y - 0.5).powf(2.0)).sqrt();
+                        
+                        if local_dist < dot_size { 
+                            ((1.0 - dist) * (1.0 - local_dist / dot_size)).max(0.0)
+                        } else { 
+                            0.0 
+                        }
+                    } else if filename.contains("watercolor") || filename.contains("aquarelle") {
+                        // Motif aquarelle fluide
+                        let wave1 = ((rx * 3.0 + ry * 2.0).sin() * 0.3).abs();
+                        let wave2 = ((rx * 5.0 - ry * 4.0).cos() * 0.2).abs();
+                        let flow = (wave1 + wave2 + 0.5).min(1.0);
+                        
+                        let fade = (1.0 - dist.powf(1.5)).max(0.0);
+                        fade * flow * 0.6
                     } else {
-                        // Motif par défaut - textured circle
-                        let texture = ((rx * 8.0).sin() * (ry * 8.0).cos()).abs() * 0.3 + 0.7;
-                        (1.0 - dist) * texture
+                        // Motif par défaut amélioré
+                        let texture = ((rx * 6.0).sin() * (ry * 6.0).cos()).abs() * 0.4 + 0.6;
+                        (1.0 - dist) * texture * 0.8
                     };
                     
                     mask[y * size + x] = value.clamp(0.0, 1.0);
                 }
             }
         }
-        
-        mask
     }
     
-    // Mettre à jour l'angle du pinceau en fonction du mouvement
+    // Mettre à jour l'angle du pinceau en fonction du mouvement - avec lissage
     pub fn update_angle(&mut self, x: f32, y: f32) {
         if let Some((prev_x, prev_y)) = self.last_position {
             let dx = x - prev_x;
             let dy = y - prev_y;
             
             // Calculer l'angle uniquement si le déplacement est significatif
-            if dx * dx + dy * dy > 1.0 {
-                // Calculer l'angle du mouvement
-                self.current_angle = dy.atan2(dx);
+            if dx * dx + dy * dy > 0.25 { // Seuil réduit pour plus de réactivité
+                // Calculer le nouvel angle
+                let new_angle = dy.atan2(dx);
+                
+                // Lissage de l'angle pour éviter les changements brusques
+                let angle_diff = new_angle - self.current_angle;
+                
+                // Normaliser la différence d'angle entre -PI et PI
+                let normalized_diff = if angle_diff > std::f32::consts::PI {
+                    angle_diff - 2.0 * std::f32::consts::PI
+                } else if angle_diff < -std::f32::consts::PI {
+                    angle_diff + 2.0 * std::f32::consts::PI
+                } else {
+                    angle_diff
+                };
+                
+                // Appliquer un lissage (facteur entre 0.1 et 0.3)
+                let smoothing_factor = 0.2;
+                self.current_angle += normalized_diff * smoothing_factor;
             }
         }
         
@@ -478,25 +562,27 @@ impl BrushManager {
         let center = size as f32 / 2.0;
         let radius = center;
         
-        // Angle effectif avec la rotation de base
+        // Angle effectif avec la rotation de base (lissé)
         let effective_angle = self.current_angle + active.base_rotation;
         let cos_a = effective_angle.cos();
         let sin_a = effective_angle.sin();
         
-        // Calculer le masque pour chaque pixel selon le type de pinceau - version simplifiée
+        // Calculer le masque pour chaque pixel selon le type de pinceau
         for y in 0..size {
             for x in 0..size {
-                // Position relative au centre - pas d'anti-aliasing
+                // Position relative au centre
                 let rx = (x as f32 - center) / radius;
                 let ry = (y as f32 - center) / radius;
                 
-                let mut value = 0.0;
+                let mut value: f32 = 0.0; // Spécifier le type f32
                 
                 match active.brush_type {
                     BrushType::Round => {
-                        // Pinceau rond simple et net
+                        // Pinceau rond avec bords nets (pas de dégradé)
                         let dist = (rx * rx + ry * ry).sqrt();
-                        value = (1.0 - dist).max(0.0);
+                        if dist <= 1.0 {
+                            value = 1.0; // Forme pleine sans transition douce
+                        }
                     },
                     
                     BrushType::Flat => {
@@ -520,26 +606,30 @@ impl BrushManager {
                     },
                     
                     BrushType::Filbert => {
-                        // Forme ovale arrondie simple
+                        // Forme ovale avec bords nets (pas de dégradé)
                         let rx_rot = rx * cos_a - ry * sin_a;
                         let ry_rot = rx * sin_a + ry * cos_a;
                         
-                        let ellipse_dist = (rx_rot * rx_rot) / (0.5 * 0.5) + (ry_rot * ry_rot) / (1.0 * 1.0);
+                        let ellipse_a = 0.6;
+                        let ellipse_b = 1.0;
+                        let ellipse_dist = (rx_rot * rx_rot) / (ellipse_a * ellipse_a) + 
+                                          (ry_rot * ry_rot) / (ellipse_b * ellipse_b);
+                        
                         if ellipse_dist <= 1.0 {
-                            value = (1.0 - ellipse_dist.sqrt()).max(0.0);
+                            value = 1.0; // Forme pleine sans transition douce
                         }
                     },
                     
                     BrushType::Fan => {
                         // Forme en éventail simplifiée
-                        let angle_from_center = ry.atan2(rx) + PI;
+                        let angle_from_center = ry.atan2(rx) + std::f32::consts::PI;
                         let dist = (rx * rx + ry * ry).sqrt();
                         
                         if dist <= 1.0 {
-                            // Créer 5 "dents" d'éventail simples
+                            // Créer des "dents" d'éventail simples
                             let fan_segments = 5.0;
-                            let segment_width = PI * 0.9 / fan_segments;
-                            let normalized_angle = (angle_from_center % (PI * 2.0)) - PI * 0.55;
+                            let segment_width = std::f32::consts::PI * 0.9 / fan_segments;
+                            let normalized_angle = (angle_from_center % (std::f32::consts::PI * 2.0)) - std::f32::consts::PI * 0.55;
                             
                             for i in 0..5 {
                                 let segment_center = i as f32 * segment_width;
@@ -569,10 +659,10 @@ impl BrushManager {
                     },
                     
                     BrushType::Mop => {
-                        // Large pinceau diffus simple
+                        // Pinceau large avec forme nette (pas de dégradé complexe)
                         let dist = (rx * rx + ry * ry).sqrt();
-                        if dist <= 1.2 {
-                            value = ((1.2 - dist) / 1.2).max(0.0);
+                        if dist <= 1.0 {
+                            value = 1.0; // Forme pleine comme les autres pinceaux
                         }
                     },
                     
@@ -587,30 +677,22 @@ impl BrushManager {
                     },
                     
                     BrushType::Custom => {
-                        // Pinceau personnalisé simple
+                        // Pinceau personnalisé avec texture réelle
                         if let Some(texture_path) = &active.texture_path {
-                            let dist = (rx * rx + ry * ry).sqrt();
-                            
-                            if dist <= 1.0 {
-                                // Motifs simples selon le type
-                                value = if texture_path.contains("splatter") {
-                                    let noise = ((rx * 6.0).sin() * (ry * 6.0).cos()).abs();
-                                    if noise > 0.3 { 1.0 } else { 0.0 }
-                                } else if texture_path.contains("grunge") {
-                                    let noise = ((rx * 4.0).sin() + (ry * 3.0).cos()) * 0.2;
-                                    if (1.0 - dist + noise) > 0.5 { 1.0 } else { 0.0 }
-                                } else {
-                                    1.0 - dist
-                                };
-                            }
+                            // Utiliser le générateur de texture amélioré
+                            let texture_mask = self.generate_texture_brush_mask(size, texture_path);
+                            return texture_mask; // Retourner directement le masque de texture
                         } else {
-                            // Comportement par défaut
+                            // Comportement par défaut - cercle simple
                             let dist = (rx * rx + ry * ry).sqrt();
-                            value = (1.0 - dist).max(0.0);
+                            if dist <= 1.0 {
+                                value = 1.0; // Forme pleine sans dégradé
+                            }
                         }
                     },
                 }
-                // Appliquer la dureté simplement
+                
+                // Appliquer la dureté de façon stable
                 if value > 0.0 && active.hardness < 1.0 {
                     value = value.powf(1.0 / active.hardness.max(0.1));
                 }
@@ -828,17 +910,10 @@ impl BrushManager {
                 }
             });
         
-        // Boutons pour pinceaux personnalisés
+        // Bouton pour charger une texture
         ui.add_space(10.0);
         ui.separator();
         ui.horizontal(|ui| {
-            if ui.button(format!("+ {}", get_text("brush_custom", language))).clicked() {
-                let new_brush = BrushProperties::from_type(BrushType::Custom);
-                let index = self.add_custom_brush(new_brush);
-                self.set_active_brush(index);
-                changed = true;
-            }
-            
             if ui.button(get_text("load_texture", language)).clicked() {
                 // Ouvrir un dialogue de fichier pour charger une texture
                 if let Some(path) = rfd::FileDialog::new()
@@ -873,6 +948,11 @@ impl BrushManager {
                             new_brush.spacing = 0.5;
                             new_brush.hardness = 0.9;
                             new_brush.texture_strength = 0.6;
+                        } else {
+                            // Propriétés par défaut pour texture inconnue
+                            new_brush.texture_strength = 0.5;
+                            new_brush.spacing = 0.2;
+                            new_brush.hardness = 0.7;
                         }
                         
                         let index = self.add_custom_brush(new_brush);

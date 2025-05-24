@@ -780,9 +780,16 @@ impl PaintApp {
 
     // Draw a line between two points
     fn draw_line(&mut self, start: (i32, i32), end: (i32, i32), _color: Color32) {
+        // Use the correct size based on the current tool
+        let current_size = if self.current_tool == Tool::Eraser {
+            self.eraser_size as f32
+        } else {
+            self.brush_size as f32
+        };
+        
         // Update brush manager size if it's different
-        if self.brush_manager.current_size != self.brush_size as f32 {
-            self.brush_manager.current_size = self.brush_size as f32;
+        if self.brush_manager.current_size != current_size {
+            self.brush_manager.current_size = current_size;
         }
         
         // Ensure active layer is visible before drawing
@@ -791,75 +798,31 @@ impl PaintApp {
             return;
         }
         
-        // Use the advanced brush system to calculate line points
+        // Calculate the distance between points
         let (x0, y0) = start;
         let (x1, y1) = end;
-        let dx = (x1 - x0).abs();
-        let dy = -(y1 - y0).abs();
-        let sx = if x0 < x1 { 1 } else { -1 };
-        let sy = if y0 < y1 { 1 } else { -1 };
-        let mut err = dx + dy;
+        let dx = (x1 - x0) as f32;
+        let dy = (y1 - y0) as f32;
+        let distance = (dx * dx + dy * dy).sqrt();
         
-        let mut x = x0;
-        let mut y = y0;
+        // Pour des traits continus, on utilise un espacement très petit
+        let spacing = (current_size * 0.1).max(0.5); // Très petit espacement
+        let num_points = (distance / spacing).ceil() as i32;
         
-        // Calculate spacing based on brush properties and type - très réduit pour fluidité
-        let active_brush = self.brush_manager.active_brush();
-        let base_spacing = active_brush.spacing * self.brush_manager.current_size;
-        
-        // Espacement encore plus réduit pour tous les pinceaux
-        let spacing = match active_brush.brush_type {
-            brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
-                (base_spacing * 0.1).max(0.1)
-            },
-            brush_system::BrushType::Rigger => {
-                (base_spacing * 0.05).max(0.05)
-            },
-            brush_system::BrushType::Fan => {
-                (base_spacing * 0.2).max(0.2)
-            },
-            _ => {
-                (base_spacing * 0.1).max(0.1)
-            }
-        };
-        let mut accumulated_distance = 0.0;
-        let mut last_x = x0;
-        let mut last_y = y0;
-        
-        // Always draw the first point
-        self.draw_point(x0, y0, false);
-        
-        loop {
-            // Calculate distance from last drawn point
-            let segment_length = ((x - last_x).pow(2) + (y - last_y).pow(2)) as f32;
-            accumulated_distance += segment_length.sqrt();
-            
-            // Draw point if we've moved enough
-            if accumulated_distance >= spacing {
-                self.draw_point(x, y, false);
-                accumulated_distance = 0.0;
-                last_x = x;
-                last_y = y;
-            }
-            
-            if x == x1 && y == y1 {
-                break;
-            }
-            
-            let e2 = 2 * err;
-            if e2 >= dy {
-                err += dy;
-                x += sx;
-            }
-            if e2 <= dx {
-                err += dx;
-                y += sy;
-            }
+        if num_points <= 1 {
+            // Distance très courte, dessiner juste le point final
+            self.draw_point(x1, y1, false);
+            return;
         }
         
-        // Always draw the final point
-        if last_x != x1 || last_y != y1 {
-            self.draw_point(x1, y1, false);
+        // Interpolation linéaire pour des points régulièrement espacés
+        for i in 0..=num_points {
+            let t = if num_points > 0 { i as f32 / num_points as f32 } else { 0.0 };
+            let x = x0 as f32 + dx * t;
+            let y = y0 as f32 + dy * t;
+            
+            // Dessiner chaque point interpolé
+            self.draw_point(x.round() as i32, y.round() as i32, false);
         }
         
         self.last_action_time = Instant::now();
@@ -943,6 +906,18 @@ impl PaintApp {
     fn draw_smooth_point(&mut self, x: f32, y: f32, use_secondary: bool) {
         let color = if use_secondary { self.secondary_color } else { self.primary_color };
         
+        // Use the correct size based on the current tool
+        let current_size = if self.current_tool == Tool::Eraser {
+            self.eraser_size as f32
+        } else {
+            self.brush_size as f32
+        };
+        
+        // Update brush manager size if it's different
+        if self.brush_manager.current_size != current_size {
+            self.brush_manager.current_size = current_size;
+        }
+        
         // Get the four surrounding integer positions
         let x0 = x.floor() as i32;
         let y0 = y.floor() as i32;
@@ -964,7 +939,7 @@ impl PaintApp {
         let positions = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)];
         
         for (i, &(px, py)) in positions.iter().enumerate() {
-            if weights[i] > 0.0 { // Seuil minimal pour anti-aliasing
+            if weights[i] > 0.0 {
                 let weighted_color = Color32::from_rgba_unmultiplied(
                     color.r(),
                     color.g(), 
@@ -978,9 +953,16 @@ impl PaintApp {
     
     // Draw a point with specific weighted color for anti-aliasing
     fn draw_weighted_point(&mut self, x: i32, y: i32, weighted_color: Color32) {
+        // Use the correct size based on the current tool
+        let current_size = if self.current_tool == Tool::Eraser {
+            self.eraser_size as f32
+        } else {
+            self.brush_size as f32
+        };
+        
         // Update brush manager size if it's different
-        if self.brush_manager.current_size != self.brush_size as f32 {
-            self.brush_manager.current_size = self.brush_size as f32;
+        if self.brush_manager.current_size != current_size {
+            self.brush_manager.current_size = current_size;
         }
         
         // Ensure active layer is visible before drawing
@@ -992,11 +974,11 @@ impl PaintApp {
         // Update brush angle based on position
         self.brush_manager.update_angle(x as f32, y as f32);
         
-        // Calculate mask size based on brush type and size - simplifié
+        // Calculate mask size based on brush type and size
         let base_size = self.brush_manager.current_size;
         let active_brush = self.brush_manager.active_brush();
         
-        // Tailles de masque plus petites et uniformes
+        // Ensure consistent mask sizes for all brush types
         let mask_size = match active_brush.brush_type {
             brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
                 ((base_size * 2.0).max(7.0) as usize) | 1
@@ -1009,6 +991,12 @@ impl PaintApp {
             },
             brush_system::BrushType::Mop => {
                 ((base_size * 2.5).max(9.0) as usize) | 1
+            },
+            brush_system::BrushType::Round => {
+                ((base_size * 2.0).max(7.0) as usize) | 1
+            },
+            brush_system::BrushType::Filbert => {
+                ((base_size * 2.0).max(7.0) as usize) | 1
             },
             _ => {
                 ((base_size * 2.0).max(7.0) as usize) | 1
@@ -1031,11 +1019,11 @@ impl PaintApp {
                 if nx >= 0 && nx < width && ny >= 0 && ny < height {
                     let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
                     
-                    if mask_value > 0.0 { // Seuil minimal pour maximum de couverture
+                    if mask_value > 0.0 {
                         // Calculate the final color with weighted alpha and mask
                         let final_alpha = ((weighted_color.a() as f32) * mask_value) as u8;
                         let new_color = if self.current_tool == Tool::Eraser {
-                            None
+                            None // Eraser removes pixels completely
                         } else if final_alpha > 0 {
                             Some(Color32::from_rgba_unmultiplied(
                                 weighted_color.r(), 
@@ -1060,9 +1048,16 @@ impl PaintApp {
     fn draw_point(&mut self, x: i32, y: i32, _use_secondary: bool) {
         let color = if self.using_secondary_color { self.secondary_color } else { self.primary_color };
         
+        // Use the correct size based on the current tool
+        let current_size = if self.current_tool == Tool::Eraser {
+            self.eraser_size as f32
+        } else {
+            self.brush_size as f32
+        };
+        
         // Update brush manager size if it's different
-        if self.brush_manager.current_size != self.brush_size as f32 {
-            self.brush_manager.current_size = self.brush_size as f32;
+        if self.brush_manager.current_size != current_size {
+            self.brush_manager.current_size = current_size;
         }
         
         // Ensure active layer is visible before drawing
@@ -1074,11 +1069,11 @@ impl PaintApp {
         // Update brush angle based on position
         self.brush_manager.update_angle(x as f32, y as f32);
         
-        // Calculate mask size based on brush type and size - simplifié
+        // Calculate mask size based on brush type and size
         let base_size = self.brush_manager.current_size;
         let active_brush = self.brush_manager.active_brush();
         
-        // Tailles de masque plus petites et uniformes
+        // Ensure consistent mask sizes
         let mask_size = match active_brush.brush_type {
             brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
                 ((base_size * 2.0).max(7.0) as usize) | 1
@@ -1091,6 +1086,12 @@ impl PaintApp {
             },
             brush_system::BrushType::Mop => {
                 ((base_size * 2.5).max(9.0) as usize) | 1
+            },
+            brush_system::BrushType::Round => {
+                ((base_size * 2.0).max(7.0) as usize) | 1
+            },
+            brush_system::BrushType::Filbert => {
+                ((base_size * 2.0).max(7.0) as usize) | 1
             },
             _ => {
                 ((base_size * 2.0).max(7.0) as usize) | 1
@@ -1113,11 +1114,11 @@ impl PaintApp {
                 if nx >= 0 && nx < width && ny >= 0 && ny < height {
                     let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
                     
-                    if mask_value > 0.0 { // Seuil minimal pour maximum de couverture
+                    if mask_value > 0.0 {
                         // Calculate the final color with alpha blending
                         let alpha = (color.a() as f32 * mask_value) as u8;
                         let new_color = if self.current_tool == Tool::Eraser {
-                            None
+                            None // Eraser removes pixels completely
                         } else if alpha > 0 {
                             Some(Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha))
                         } else {
@@ -1138,6 +1139,18 @@ impl PaintApp {
         // For compatibility with existing code, we convert the optional color to a solid color
         let color = fill_color.unwrap_or(Color32::TRANSPARENT);
         
+        // Use the correct size based on the current tool
+        let current_size = if self.current_tool == Tool::Eraser {
+            self.eraser_size as f32
+        } else {
+            self.brush_size as f32
+        };
+        
+        // Update brush manager size if it's different
+        if self.brush_manager.current_size != current_size {
+            self.brush_manager.current_size = current_size;
+        }
+        
         // Ensure active layer is visible before drawing
         if self.current_state.active_layer_index < self.current_state.layers.len() && 
            !self.current_state.layers[self.current_state.active_layer_index].visible {
@@ -1151,7 +1164,7 @@ impl PaintApp {
         let base_size = self.brush_manager.current_size;
         let active_brush = self.brush_manager.active_brush();
         
-        // Tailles de masque plus petites et uniformes
+        // Ensure consistent mask sizes for all brush types
         let mask_size = match active_brush.brush_type {
             brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
                 ((base_size * 2.0).max(7.0) as usize) | 1
@@ -1164,6 +1177,12 @@ impl PaintApp {
             },
             brush_system::BrushType::Mop => {
                 ((base_size * 2.5).max(9.0) as usize) | 1
+            },
+            brush_system::BrushType::Round => {
+                ((base_size * 2.0).max(7.0) as usize) | 1
+            },
+            brush_system::BrushType::Filbert => {
+                ((base_size * 2.0).max(7.0) as usize) | 1
             },
             _ => {
                 ((base_size * 2.0).max(7.0) as usize) | 1
@@ -1186,7 +1205,7 @@ impl PaintApp {
                 if nx >= 0 && nx < width && ny >= 0 && ny < height {
                     let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
                     
-                    if mask_value > 0.0 { // Seuil minimal pour maximum de couverture
+                    if mask_value > 0.0 {
                         // For eraser or transparent color, set to None
                         let final_color = if self.current_tool == Tool::Eraser || fill_color.is_none() {
                             None
@@ -1603,20 +1622,22 @@ impl eframe::App for MyApp {
                                 ui.horizontal(|ui| {
                                     let btn_size = Vec2::new(32.0, 28.0);
                                     
-                                    if ui.add(
-                                        egui::Button::new(ToolIcons::add())
+                                    let add_btn = ui.add(
+                                        egui::Button::new("")
                                             .fill(RustiqueTheme::ACCENT_PRIMARY)
                                             .stroke(egui::Stroke::new(1.0, RustiqueTheme::ACCENT_PRIMARY))
                                             .rounding(RustiqueTheme::rounding_small())
                                             .min_size(btn_size)
-                                    ).clicked() {
+                                    );
+                                    ui.put(add_btn.rect, ToolIcons::add());
+                                    if add_btn.clicked() {
                                         paint_app.add_layer(format!("Layer {}", paint_app.current_state.layers.len() + 1));
                                     }
                                     
                                     ui.add_space(RustiqueTheme::SPACING_XS);
                                     
-                                    if ui.add(
-                                        egui::Button::new(ToolIcons::remove())
+                                    let remove_btn = ui.add(
+                                        egui::Button::new("")
                                             .fill(if paint_app.current_state.layers.len() > 1 { 
                                                 RustiqueTheme::ERROR 
                                             } else { 
@@ -1629,31 +1650,37 @@ impl eframe::App for MyApp {
                                             }))
                                             .rounding(RustiqueTheme::rounding_small())
                                             .min_size(btn_size)
-                                    ).clicked() && paint_app.current_state.layers.len() > 1 {
+                                    );
+                                    ui.put(remove_btn.rect, ToolIcons::remove());
+                                    if remove_btn.clicked() && paint_app.current_state.layers.len() > 1 {
                                         paint_app.remove_layer(paint_app.current_state.active_layer_index);
                                     }
                                     
                                     ui.add_space(RustiqueTheme::SPACING_SM);
                                     
-                                    if ui.add(
-                                        egui::Button::new(ToolIcons::move_up())
+                                    let up_btn = ui.add(
+                                        egui::Button::new("")
                                             .fill(RustiqueTheme::SURFACE_SECONDARY)
                                             .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
                                             .rounding(RustiqueTheme::rounding_small())
                                             .min_size(btn_size)
-                                    ).clicked() {
+                                    );
+                                    ui.put(up_btn.rect, ToolIcons::move_up());
+                                    if up_btn.clicked() {
                                         paint_app.move_layer_up(paint_app.current_state.active_layer_index);
                                     }
                                     
                                     ui.add_space(RustiqueTheme::SPACING_XS);
                                     
-                                    if ui.add(
-                                        egui::Button::new(ToolIcons::move_down())
+                                    let down_btn = ui.add(
+                                        egui::Button::new("")
                                             .fill(RustiqueTheme::SURFACE_SECONDARY)
                                             .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
                                             .rounding(RustiqueTheme::rounding_small())
                                             .min_size(btn_size)
-                                    ).clicked() {
+                                    );
+                                    ui.put(down_btn.rect, ToolIcons::move_down());
+                                    if down_btn.clicked() {
                                         paint_app.move_layer_down(paint_app.current_state.active_layer_index);
                                     }
                                 });
@@ -1671,12 +1698,18 @@ impl eframe::App for MyApp {
                                     RustiqueTheme::card_frame().show(ui, |ui| {
                                         ui.horizontal(|ui| {
                                             let visibility_btn = ui.add(
-                                                egui::Button::new(if *visible { ToolIcons::layer_visible() } else { ToolIcons::layer_hidden() })
+                                                egui::Button::new("")
                                                     .fill(Color32::TRANSPARENT)
                                                     .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
                                                     .rounding(RustiqueTheme::rounding_small())
                                                     .min_size(Vec2::new(28.0, 28.0))
                                             );
+                                            
+                                            ui.put(visibility_btn.rect, if *visible { 
+                                                ToolIcons::layer_visible() 
+                                            } else { 
+                                                ToolIcons::layer_hidden() 
+                                            });
                                             
                                             if visibility_btn.clicked() {
                                                 self.pending_action = PendingAction::HandleLayerAction(
@@ -1712,13 +1745,15 @@ impl eframe::App for MyApp {
                                             }
                                             
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                if ui.add(
-                                                    egui::Button::new(ToolIcons::edit())
+                                                let edit_btn = ui.add(
+                                                    egui::Button::new("")
                                                         .fill(Color32::TRANSPARENT)
                                                         .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
                                                         .rounding(RustiqueTheme::rounding_small())
                                                         .min_size(Vec2::new(24.0, 24.0))
-                                                ).clicked() {
+                                                );
+                                                ui.put(edit_btn.rect, ToolIcons::edit());
+                                                if edit_btn.clicked() {
                                                     self.pending_action = PendingAction::HandleLayerAction(
                                                         LayerAction::Edit(*i)
                                                     );
@@ -1743,7 +1778,7 @@ impl eframe::App for MyApp {
                                 let tool_size = Vec2::new(40.0, 40.0);
                                 
                                 let brush_btn = ui.add(
-                                    egui::Button::new(ToolIcons::brush())
+                                    egui::Button::new("")
                                         .fill(if paint_app.current_tool == Tool::Brush { 
                                             RustiqueTheme::ACCENT_PRIMARY 
                                         } else { 
@@ -1760,6 +1795,7 @@ impl eframe::App for MyApp {
                                         .rounding(RustiqueTheme::rounding_small())
                                         .min_size(tool_size)
                                 );
+                                ui.put(brush_btn.rect, ToolIcons::brush());
                                 if brush_btn.clicked() {
                                     paint_app.current_tool = Tool::Brush;
                                 }
@@ -1768,7 +1804,7 @@ impl eframe::App for MyApp {
                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                 
                                 let eraser_btn = ui.add(
-                                    egui::Button::new(ToolIcons::eraser())
+                                    egui::Button::new("")
                                         .fill(if paint_app.current_tool == Tool::Eraser { 
                                             RustiqueTheme::ACCENT_PRIMARY 
                                         } else { 
@@ -1785,6 +1821,7 @@ impl eframe::App for MyApp {
                                         .rounding(RustiqueTheme::rounding_small())
                                         .min_size(tool_size)
                                 );
+                                ui.put(eraser_btn.rect, ToolIcons::eraser());
                                 if eraser_btn.clicked() {
                                     paint_app.current_tool = Tool::Eraser;
                                 }
@@ -1793,7 +1830,7 @@ impl eframe::App for MyApp {
                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                 
                                 let bucket_btn = ui.add(
-                                    egui::Button::new(ToolIcons::paint_bucket())
+                                    egui::Button::new("")
                                         .fill(if paint_app.current_tool == Tool::PaintBucket { 
                                             RustiqueTheme::ACCENT_PRIMARY 
                                         } else { 
@@ -1810,6 +1847,7 @@ impl eframe::App for MyApp {
                                         .rounding(RustiqueTheme::rounding_small())
                                         .min_size(tool_size)
                                 );
+                                ui.put(bucket_btn.rect, ToolIcons::paint_bucket());
                                 if bucket_btn.clicked() {
                                     paint_app.current_tool = Tool::PaintBucket;
                                 }
@@ -1818,7 +1856,7 @@ impl eframe::App for MyApp {
                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                 
                                 let picker_btn = ui.add(
-                                    egui::Button::new(ToolIcons::color_picker())
+                                    egui::Button::new("")
                                         .fill(if paint_app.current_tool == Tool::ColorPicker { 
                                             RustiqueTheme::ACCENT_PRIMARY 
                                         } else { 
@@ -1835,6 +1873,7 @@ impl eframe::App for MyApp {
                                         .rounding(RustiqueTheme::rounding_small())
                                         .min_size(tool_size)
                                 );
+                                ui.put(picker_btn.rect, ToolIcons::color_picker());
                                 if picker_btn.clicked() {
                                     paint_app.current_tool = Tool::ColorPicker;
                                 }
@@ -1843,7 +1882,7 @@ impl eframe::App for MyApp {
                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                 
                                 let line_btn = ui.add(
-                                    egui::Button::new(ToolIcons::line())
+                                    egui::Button::new("")
                                         .fill(if paint_app.current_tool == Tool::Line { 
                                             RustiqueTheme::ACCENT_PRIMARY 
                                         } else { 
@@ -1860,6 +1899,7 @@ impl eframe::App for MyApp {
                                         .rounding(RustiqueTheme::rounding_small())
                                         .min_size(tool_size)
                                 );
+                                ui.put(line_btn.rect, ToolIcons::line());
                                 if line_btn.clicked() {
                                     paint_app.current_tool = Tool::Line;
                                 }
@@ -1924,175 +1964,183 @@ impl eframe::App for MyApp {
                                 ui.label(RustiqueTheme::heading_text("Properties", 16.0));
                                 ui.add_space(RustiqueTheme::SPACING_SM);
                                 
-                                RustiqueTheme::card_frame().show(ui, |ui| {
-                                    ui.vertical(|ui| {
-                                        ui.label(RustiqueTheme::body_text("Brush System"));
-                                        ui.add_space(RustiqueTheme::SPACING_XS);
-                                        
-                                        if paint_app.brush_manager.brush_selector_grid(ui, ctx, self.language) {
-                                            paint_app.brush_manager.current_size = paint_app.brush_size as f32;
-                                        }
-                                    });
-                                });
-                                
-                                ui.add_space(RustiqueTheme::SPACING_MD);
-                                
-                                RustiqueTheme::card_frame().show(ui, |ui| {
-                                    ui.vertical(|ui| {
-                                        ui.label(RustiqueTheme::body_text("Tool Settings"));
-                                        ui.add_space(RustiqueTheme::SPACING_XS);
-                                        
-                                        ui.horizontal(|ui| {
-                                            ui.label(RustiqueTheme::muted_text("Brush Size:"));
-                                            ui.add(egui::DragValue::new(&mut paint_app.brush_size)
-                                                .speed(0.1)
-                                                .clamp_range(1..=500)
-                                                .suffix("px"));
+                                // Utiliser ScrollArea pour permettre le défilement
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false; 2])
+                                    .show(ui, |ui| {
+                                        RustiqueTheme::card_frame().show(ui, |ui| {
+                                            ui.vertical(|ui| {
+                                                ui.label(RustiqueTheme::body_text("Brush System"));
+                                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                                
+                                                if paint_app.brush_manager.brush_selector_grid(ui, ctx, self.language) {
+                                                    paint_app.brush_manager.current_size = paint_app.brush_size as f32;
+                                                }
+                                            });
                                         });
                                         
-                                        ui.add_space(RustiqueTheme::SPACING_XS);
+                                        ui.add_space(RustiqueTheme::SPACING_MD);
                                         
-                                        ui.horizontal(|ui| {
-                                            ui.label(RustiqueTheme::muted_text("Eraser Size:"));
-                                            ui.add(egui::DragValue::new(&mut paint_app.eraser_size)
-                                                .speed(0.1)
-                                                .clamp_range(1..=500)
-                                                .suffix("px"));
-                                        });
-                                        
-                                        ui.add_space(RustiqueTheme::SPACING_XS);
-                                        
-                                        ui.horizontal(|ui| {
-                                            ui.label(RustiqueTheme::muted_text("Zoom:"));
-                                            ui.add(egui::Slider::new(&mut paint_app.zoom, 0.1..=10.0)
-                                                .logarithmic(true)
-                                                .suffix("x"));
-                                        });
-                                    });
-                                });
-                                
-                                ui.add_space(RustiqueTheme::SPACING_MD);
-                                ui.add_space(RustiqueTheme::SPACING_MD);
-                                
-                                RustiqueTheme::card_frame().show(ui, |ui| {
-                                    ui.vertical(|ui| {
-                                        ui.label(RustiqueTheme::body_text("Colors"));
-                                        ui.add_space(RustiqueTheme::SPACING_XS);
-                                        
-                                        ui.horizontal(|ui| {
-                                            ui.label(RustiqueTheme::muted_text("Primary:"));
-                                            ui.color_edit_button_srgba(&mut paint_app.primary_color);
-                                            if ui.add(
-                                                egui::Button::new(ToolIcons::add())
-                                                    .fill(RustiqueTheme::SURFACE_SECONDARY)
-                                                    .rounding(RustiqueTheme::rounding_small())
-                                                    .min_size(Vec2::new(24.0, 24.0))
-                                            ).clicked() {
-                                                paint_app.add_saved_color(paint_app.primary_color);
-                                            }
-                                        });
-                                        
-                                        ui.add_space(RustiqueTheme::SPACING_XS);
-                                        
-                                        ui.horizontal(|ui| {
-                                            ui.label(RustiqueTheme::muted_text("Secondary:"));
-                                            ui.color_edit_button_srgba(&mut paint_app.secondary_color);
-                                            if ui.add(
-                                                egui::Button::new(ToolIcons::add())
-                                                    .fill(RustiqueTheme::SURFACE_SECONDARY)
-                                                    .rounding(RustiqueTheme::rounding_small())
-                                                    .min_size(Vec2::new(24.0, 24.0))
-                                            ).clicked() {
-                                                paint_app.add_saved_color(paint_app.secondary_color);
-                                            }
-                                        });
-                                    });
-                                });
-                                
-                                if !paint_app.saved_colors.is_empty() {
-                                    ui.add_space(RustiqueTheme::SPACING_MD);
-                                    
-                                    RustiqueTheme::card_frame().show(ui, |ui| {
-                                        ui.vertical(|ui| {
-                                            ui.label(RustiqueTheme::body_text("Saved Colors"));
-                                            ui.add_space(RustiqueTheme::SPACING_XS);
-                                            
-                                            let available_width = ui.available_width();
-                                            let color_size = 28.0;
-                                            let spacing = 4.0;
-                                            let colors_per_row = ((available_width + spacing) / (color_size + spacing)).floor() as usize;
-                                            let colors_count = paint_app.saved_colors.len();
-                                            
-                                            for i in 0..(colors_count / colors_per_row + (if colors_count % colors_per_row > 0 { 1 } else { 0 })) {
+                                        RustiqueTheme::card_frame().show(ui, |ui| {
+                                            ui.vertical(|ui| {
+                                                ui.label(RustiqueTheme::body_text("Tool Settings"));
+                                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                                
                                                 ui.horizontal(|ui| {
-                                                    for j in 0..colors_per_row {
-                                                        let idx = i * colors_per_row + j;
-                                                        if idx < colors_count {
-                                                            let color = paint_app.saved_colors[idx];
-                                                            let btn = ui.add(
-                                                                egui::Button::new("")
-                                                                    .fill(color)
-                                                                    .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
-                                                                    .rounding(RustiqueTheme::rounding_small())
-                                                                    .min_size(Vec2::new(color_size, color_size))
-                                                            );
-                                                            
-                                                            if btn.clicked() {
-                                                                paint_app.primary_color = color;
-                                                            }
-                                                            if btn.clicked_by(egui::PointerButton::Secondary) {
-                                                                paint_app.secondary_color = color;
-                                                            }
-                                                            if btn.clicked_by(egui::PointerButton::Middle) {
-                                                                paint_app.remove_saved_color(idx);
-                                                                break;
-                                                            }
-                                                            
-                                                            btn.on_hover_text("Left: Primary | Right: Secondary | Middle: Delete");
-                                                        }
+                                                    ui.label(RustiqueTheme::muted_text("Brush Size:"));
+                                                    ui.add(egui::DragValue::new(&mut paint_app.brush_size)
+                                                        .speed(0.1)
+                                                        .clamp_range(1..=500)
+                                                        .suffix("px"));
+                                                });
+                                                
+                                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                                
+                                                ui.horizontal(|ui| {
+                                                    ui.label(RustiqueTheme::muted_text("Eraser Size:"));
+                                                    ui.add(egui::DragValue::new(&mut paint_app.eraser_size)
+                                                        .speed(0.1)
+                                                        .clamp_range(1..=500)
+                                                        .suffix("px"));
+                                                });
+                                                
+                                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                                
+                                                ui.horizontal(|ui| {
+                                                    ui.label(RustiqueTheme::muted_text("Zoom:"));
+                                                    ui.add(egui::Slider::new(&mut paint_app.zoom, 0.1..=10.0)
+                                                        .logarithmic(true)
+                                                        .suffix("x"));
+                                                });
+                                            });
+                                        });
+                                        
+                                        ui.add_space(RustiqueTheme::SPACING_MD);
+                                        
+                                        RustiqueTheme::card_frame().show(ui, |ui| {
+                                            ui.vertical(|ui| {
+                                                ui.label(RustiqueTheme::body_text("Colors"));
+                                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                                
+                                                ui.horizontal(|ui| {
+                                                    ui.label(RustiqueTheme::muted_text("Primary:"));
+                                                    ui.color_edit_button_srgba(&mut paint_app.primary_color);
+                                                    let add_primary_btn = ui.add(
+                                                        egui::Button::new("")
+                                                            .fill(RustiqueTheme::SURFACE_SECONDARY)
+                                                            .rounding(RustiqueTheme::rounding_small())
+                                                            .min_size(Vec2::new(24.0, 24.0))
+                                                    );
+                                                    ui.put(add_primary_btn.rect, ToolIcons::add());
+                                                    if add_primary_btn.clicked() {
+                                                        paint_app.add_saved_color(paint_app.primary_color);
                                                     }
                                                 });
-                                            }
+                                                
+                                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                                
+                                                ui.horizontal(|ui| {
+                                                    ui.label(RustiqueTheme::muted_text("Secondary:"));
+                                                    ui.color_edit_button_srgba(&mut paint_app.secondary_color);
+                                                    let add_secondary_btn = ui.add(
+                                                        egui::Button::new("")
+                                                            .fill(RustiqueTheme::SURFACE_SECONDARY)
+                                                            .rounding(RustiqueTheme::rounding_small())
+                                                            .min_size(Vec2::new(24.0, 24.0))
+                                                    );
+                                                    ui.put(add_secondary_btn.rect, ToolIcons::add());
+                                                    if add_secondary_btn.clicked() {
+                                                        paint_app.add_saved_color(paint_app.secondary_color);
+                                                    }
+                                                });
+                                            });
                                         });
-                                    });
-                                }
-                                
-                                ui.add_space(RustiqueTheme::SPACING_MD);
-                                
-                                RustiqueTheme::card_frame().show(ui, |ui| {
-                                    ui.vertical(|ui| {
-                                        ui.label(RustiqueTheme::body_text("Quick Actions"));
-                                        ui.add_space(RustiqueTheme::SPACING_XS);
                                         
-                                        if ui.add(
-                                            egui::Button::new(RichText::new("💾 Save File").size(14.0))
-                                                .fill(RustiqueTheme::SURFACE_SECONDARY)
-                                                .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
-                                                .rounding(RustiqueTheme::rounding_medium())
-                                                .min_size(Vec2::new(ui.available_width(), 32.0))
-                                        ).clicked() {
-                                            if let Some(path) = FileDialog::new()
-                                                .add_filter("All Supported Files", &["png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp", "rustiq"])
-                                                .add_filter("PNG Image", &["png"])
-                                                .add_filter("JPEG Image", &["jpg", "jpeg"])
-                                                .add_filter("BMP Image", &["bmp"])
-                                                .add_filter("TIFF Image", &["tiff", "tif"])
-                                                .add_filter("GIF Image", &["gif"])
-                                                .add_filter("WebP Image", &["webp"])
-                                                .add_filter("Rustique File", &["rustiq"])
-                                                .set_directory("/")
-                                                .save_file() {
-                                                match paint_app.save_file(path.to_str().unwrap()) {
-                                                    Ok(_) => {},
-                                                    Err(e) => {
-                                                        self.error_message = Some(e);
-                                                        self.show_error = true;
+                                        if !paint_app.saved_colors.is_empty() {
+                                            ui.add_space(RustiqueTheme::SPACING_MD);
+                                            
+                                            RustiqueTheme::card_frame().show(ui, |ui| {
+                                                ui.vertical(|ui| {
+                                                    ui.label(RustiqueTheme::body_text("Saved Colors"));
+                                                    ui.add_space(RustiqueTheme::SPACING_XS);
+                                                    
+                                                    let available_width = ui.available_width();
+                                                    let color_size = 28.0;
+                                                    let spacing = 4.0;
+                                                    let colors_per_row = ((available_width + spacing) / (color_size + spacing)).floor() as usize;
+                                                    let colors_count = paint_app.saved_colors.len();
+                                                    
+                                                    for i in 0..(colors_count / colors_per_row + (if colors_count % colors_per_row > 0 { 1 } else { 0 })) {
+                                                        ui.horizontal(|ui| {
+                                                            for j in 0..colors_per_row {
+                                                                let idx = i * colors_per_row + j;
+                                                                if idx < colors_count {
+                                                                    let color = paint_app.saved_colors[idx];
+                                                                    let btn = ui.add(
+                                                                        egui::Button::new("")
+                                                                            .fill(color)
+                                                                            .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                                                            .rounding(RustiqueTheme::rounding_small())
+                                                                            .min_size(Vec2::new(color_size, color_size))
+                                                                    );
+                                                                    
+                                                                    if btn.clicked() {
+                                                                        paint_app.primary_color = color;
+                                                                    }
+                                                                    if btn.clicked_by(egui::PointerButton::Secondary) {
+                                                                        paint_app.secondary_color = color;
+                                                                    }
+                                                                    if btn.clicked_by(egui::PointerButton::Middle) {
+                                                                        paint_app.remove_saved_color(idx);
+                                                                        break;
+                                                                    }
+                                                                    
+                                                                    btn.on_hover_text("Left: Primary | Right: Secondary | Middle: Delete");
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+                                                });
+                                            });
+                                        }
+                                        
+                                        ui.add_space(RustiqueTheme::SPACING_MD);
+                                        
+                                        RustiqueTheme::card_frame().show(ui, |ui| {
+                                            ui.vertical(|ui| {
+                                                ui.label(RustiqueTheme::body_text("Quick Actions"));
+                                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                                
+                                                if ui.add(
+                                                    egui::Button::new(RichText::new("💾 Save File").size(14.0))
+                                                        .fill(RustiqueTheme::SURFACE_SECONDARY)
+                                                        .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
+                                                        .rounding(RustiqueTheme::rounding_medium())
+                                                        .min_size(Vec2::new(ui.available_width(), 32.0))
+                                                ).clicked() {
+                                                    if let Some(path) = FileDialog::new()
+                                                        .add_filter("All Supported Files", &["png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp", "rustiq"])
+                                                        .add_filter("PNG Image", &["png"])
+                                                        .add_filter("JPEG Image", &["jpg", "jpeg"])
+                                                        .add_filter("BMP Image", &["bmp"])
+                                                        .add_filter("TIFF Image", &["tiff", "tif"])
+                                                        .add_filter("GIF Image", &["gif"])
+                                                        .add_filter("WebP Image", &["webp"])
+                                                        .add_filter("Rustique File", &["rustiq"])
+                                                        .set_directory("/")
+                                                        .save_file() {
+                                                        match paint_app.save_file(path.to_str().unwrap()) {
+                                                            Ok(_) => {},
+                                                            Err(e) => {
+                                                                self.error_message = Some(e);
+                                                                self.show_error = true;
+                                                            }
+                                                        }
                                                     }
                                                 }
-                                            }
-                                        }
+                                            });
+                                        });
                                     });
-                                });
                             });
                         });
                     });
@@ -2109,37 +2157,43 @@ impl eframe::App for MyApp {
                             
                             let btn_size = Vec2::new(40.0, 32.0);
                             
-                            if ui.add(
-                                egui::Button::new(ToolIcons::home())
+                            let home_btn = ui.add(
+                                egui::Button::new("")
                                     .fill(RustiqueTheme::SURFACE_SECONDARY)
                                     .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
                                     .rounding(RustiqueTheme::rounding_medium())
                                     .min_size(btn_size)
-                            ).clicked() {
+                            );
+                            ui.put(home_btn.rect, ToolIcons::home());
+                            if home_btn.clicked() {
                                 return_clicked = true;
                             }
                             
                             ui.add_space(RustiqueTheme::SPACING_LG);
                             
-                            if ui.add(
-                                egui::Button::new(ToolIcons::undo())
+                            let undo_btn = ui.add(
+                                egui::Button::new("")
                                     .fill(RustiqueTheme::SURFACE_SECONDARY)
                                     .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
                                     .rounding(RustiqueTheme::rounding_medium())
                                     .min_size(btn_size)
-                            ).clicked() {
+                            );
+                            ui.put(undo_btn.rect, ToolIcons::undo());
+                            if undo_btn.clicked() {
                                 undo_clicked = true;
                             }
                             
                             ui.add_space(RustiqueTheme::SPACING_XS);
                             
-                            if ui.add(
-                                egui::Button::new(ToolIcons::redo())
+                            let redo_btn = ui.add(
+                                egui::Button::new("")
                                     .fill(RustiqueTheme::SURFACE_SECONDARY)
                                     .stroke(egui::Stroke::new(1.0, RustiqueTheme::BORDER_LIGHT))
                                     .rounding(RustiqueTheme::rounding_medium())
                                     .min_size(btn_size)
-                            ).clicked() {
+                            );
+                            ui.put(redo_btn.rect, ToolIcons::redo());
+                            if redo_btn.clicked() {
                                 redo_clicked = true;
                             }
                             
