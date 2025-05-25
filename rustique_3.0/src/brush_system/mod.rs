@@ -90,6 +90,12 @@ pub struct BrushProperties {
     
     // Rotation de base du pinceau (en radians)
     pub base_rotation: f32,
+    
+    // Propriétés de sensibilité à la pression
+    pub pressure_affects_size: bool,
+    pub pressure_affects_opacity: bool,
+    pub pressure_size_min: f32,
+    pub pressure_opacity_min: f32,
 }
 
 // Mode de fusion pour le pinceau
@@ -114,6 +120,10 @@ impl Default for BrushProperties {
             spacing: 0.05, // Espacement très réduit par défaut
             hardness: 1.0,         // Dur par défaut pour des bords nets
             base_rotation: 0.0,
+            pressure_affects_size: true,
+            pressure_affects_opacity: true,
+            pressure_size_min: 0.2,
+            pressure_opacity_min: 0.1,
         }
     }
 }
@@ -478,29 +488,44 @@ impl BrushManager {
     }
     
     // Dessiner un point avec le pinceau actif
-    pub fn draw_point(&mut self, x: i32, y: i32, color: Color32, record_change: &mut dyn FnMut(usize, usize, Option<Color32>)) {
-        let _active = self.active_brush();
-        let size = self.current_size as usize * 2 + 1; // S'assurer que la taille est impaire
+    pub fn draw_point(&mut self, x: i32, y: i32, color: Color32, pressure: f32, record_change: &mut dyn FnMut(usize, usize, Option<Color32>)) {
+        let active = self.active_brush();
+        let clamped_pressure = pressure.clamp(0.0, 1.0);
+        
+        // Calculer la taille effective en fonction de la pression
+        let effective_size = if active.pressure_affects_size {
+            let size_factor = active.pressure_size_min + (1.0 - active.pressure_size_min) * clamped_pressure;
+            (self.current_size as f32 * size_factor).max(1.0) as usize * 2 + 1
+        } else {
+            self.current_size as usize * 2 + 1
+        };
+        
+        // Calculer l'opacité effective en fonction de la pression
+        let effective_opacity = if active.pressure_affects_opacity {
+            active.pressure_opacity_min + (1.0 - active.pressure_opacity_min) * clamped_pressure
+        } else {
+            1.0
+        };
         
         // Mettre à jour l'angle si nécessaire
         self.update_angle(x as f32, y as f32);
         
-        // Générer le masque du pinceau
-        let mask = self.generate_brush_mask(size);
+        // Générer le masque du pinceau avec la taille effective
+        let mask = self.generate_brush_mask(effective_size);
         
         // Appliquer le masque centré sur (x, y)
-        let center = size as i32 / 2;
-        for dy in 0..size as i32 {
-            for dx in 0..size as i32 {
+        let center = effective_size as i32 / 2;
+        for dy in 0..effective_size as i32 {
+            for dx in 0..effective_size as i32 {
                 let nx = x + dx - center;
                 let ny = y + dy - center;
                 
                 // Récupérer la valeur du masque
-                let mask_value = mask[(dy as usize) * size + (dx as usize)];
+                let mask_value = mask[(dy as usize) * effective_size + (dx as usize)];
                 
                 if mask_value > 0.0 && nx >= 0 && ny >= 0 {
-                    // Calculer la couleur avec transparence basée sur le masque
-                    let alpha = (color.a() as f32 * mask_value) as u8;
+                    // Calculer la couleur avec transparence basée sur le masque et la pression
+                    let alpha = (color.a() as f32 * mask_value * effective_opacity) as u8;
                     let new_color = if alpha > 0 {
                         Some(Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha))
                     } else {
@@ -515,7 +540,7 @@ impl BrushManager {
     }
     
     // Dessiner une ligne avec le pinceau actif en utilisant une interpolation entre points
-    pub fn draw_line(&mut self, start: (i32, i32), end: (i32, i32), color: Color32, record_change: &mut dyn FnMut(usize, usize, Option<Color32>)) {
+    pub fn draw_line(&mut self, start: (i32, i32), end: (i32, i32), color: Color32, pressure: f32, record_change: &mut dyn FnMut(usize, usize, Option<Color32>)) {
         // Calculer les points intermédiaires avec l'algorithme de Bresenham
         let (x0, y0) = start;
         let (x1, y1) = end;
@@ -573,7 +598,7 @@ impl BrushManager {
         
         // Dessiner les points
         for &(px, py) in &points {
-            self.draw_point(px, py, color, record_change);
+            self.draw_point(px, py, color, pressure, record_change);
         }
     }
     

@@ -241,6 +241,10 @@ struct PaintApp {
     last_save_path: Option<String>,
     save_dialog: SaveDialog,
     language: Language,
+    current_pressure: f32,
+    pressure_history: VecDeque<f32>,
+    pressure_smoothing: f32,
+    pressure_enabled: bool,
 }
 
 impl PaintApp {
@@ -275,6 +279,10 @@ impl PaintApp {
             last_save_path: None,
             save_dialog: SaveDialog::Hidden,
             language,
+            current_pressure: 1.0,
+            pressure_history: VecDeque::with_capacity(10),
+            pressure_smoothing: 0.3,
+            pressure_enabled: true,
         }
     }
 
@@ -358,6 +366,10 @@ impl PaintApp {
             last_save_path: None,
             save_dialog: SaveDialog::Hidden,
             language,
+            current_pressure: 1.0,
+            pressure_history: VecDeque::with_capacity(10),
+            pressure_smoothing: 0.3,
+            pressure_enabled: true,
         }
     }
 
@@ -368,6 +380,42 @@ impl PaintApp {
             .and_then(|ext| ext.to_str())
             .map(FileFormat::from_extension)
             .unwrap_or(FileFormat::Unknown)
+    }
+    
+    // Update pressure with smoothing
+    fn update_pressure(&mut self, raw_pressure: f32) {
+        if !self.pressure_enabled {
+            self.current_pressure = 1.0;
+            return;
+        }
+        
+        let pressure = raw_pressure.clamp(0.0, 1.0);
+        
+        // Add to history for smoothing
+        self.pressure_history.push_back(pressure);
+        if self.pressure_history.len() > 10 {
+            self.pressure_history.pop_front();
+        }
+        
+        // Calculate smoothed pressure
+        if self.pressure_history.len() > 1 {
+            let average: f32 = self.pressure_history.iter().sum::<f32>() / self.pressure_history.len() as f32;
+            self.current_pressure = self.current_pressure * (1.0 - self.pressure_smoothing) + 
+                                  average * self.pressure_smoothing;
+        } else {
+            self.current_pressure = pressure;
+        }
+        
+        self.current_pressure = self.current_pressure.clamp(0.1, 1.0);
+    }
+    
+    // Get effective pressure for drawing
+    fn get_effective_pressure(&self) -> f32 {
+        if self.pressure_enabled {
+            self.current_pressure
+        } else {
+            1.0
+        }
     }
     
     // Unified save method
@@ -485,6 +533,10 @@ impl PaintApp {
                             last_save_path: Some(path.to_string()),
                             save_dialog: SaveDialog::Hidden,
                             language,
+                            current_pressure: 1.0,
+                            pressure_history: VecDeque::with_capacity(10),
+                            pressure_smoothing: 0.3,
+                            pressure_enabled: true,
                         };
                         
                         Ok(app)
@@ -780,6 +832,8 @@ impl PaintApp {
 
     // Draw a line between two points
     fn draw_line(&mut self, start: (i32, i32), end: (i32, i32), _color: Color32) {
+        let color = if self.using_secondary_color { self.secondary_color } else { self.primary_color };
+        
         // Use the correct size based on the current tool
         let current_size = if self.current_tool == Tool::Eraser {
             self.eraser_size as f32
@@ -798,31 +852,27 @@ impl PaintApp {
             return;
         }
         
-        // Calculate the distance between points
-        let (x0, y0) = start;
-        let (x1, y1) = end;
-        let dx = (x1 - x0) as f32;
-        let dy = (y1 - y0) as f32;
-        let distance = (dx * dx + dy * dy).sqrt();
+        // Get effective pressure
+        let pressure = self.get_effective_pressure();
+        let is_eraser = self.current_tool == Tool::Eraser;
         
-        // Pour des traits continus, on utilise un espacement très petit
-        let spacing = (current_size * 0.1).max(0.5); // Très petit espacement
-        let num_points = (distance / spacing).ceil() as i32;
-        
-        if num_points <= 1 {
-            // Distance très courte, dessiner juste le point final
-            self.draw_point(x1, y1, false);
-            return;
+        // Collect changes first, then apply them
+        let mut changes = Vec::new();
+        {
+            let mut record_change = |x: usize, y: usize, new_color: Option<Color32>| {
+                if is_eraser {
+                    changes.push((x, y, None));
+                } else {
+                    changes.push((x, y, new_color));
+                }
+            };
+            
+            self.brush_manager.draw_line(start, end, color, pressure, &mut record_change);
         }
         
-        // Interpolation linéaire pour des points régulièrement espacés
-        for i in 0..=num_points {
-            let t = if num_points > 0 { i as f32 / num_points as f32 } else { 0.0 };
-            let x = x0 as f32 + dx * t;
-            let y = y0 as f32 + dy * t;
-            
-            // Dessiner chaque point interpolé
-            self.draw_point(x.round() as i32, y.round() as i32, false);
+        // Apply changes
+        for (x, y, color) in changes {
+            self.record_change(x, y, color);
         }
         
         self.last_action_time = Instant::now();
@@ -1063,66 +1113,27 @@ impl PaintApp {
             return;
         }
         
-        // Update brush angle based on position
-        self.brush_manager.update_angle(x as f32, y as f32);
+        // Get effective pressure
+        let pressure = self.get_effective_pressure();
+        let is_eraser = self.current_tool == Tool::Eraser;
         
-        // Calculate mask size based on brush type and size
-        let base_size = self.brush_manager.current_size;
-        let active_brush = self.brush_manager.active_brush();
-        
-        // Ensure consistent mask sizes
-        let mask_size = match active_brush.brush_type {
-            brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
-                ((base_size * 2.0).max(7.0) as usize) | 1
-            },
-            brush_system::BrushType::Fan | brush_system::BrushType::Angle => {
-                ((base_size * 2.0).max(7.0) as usize) | 1
-            },
-            brush_system::BrushType::Rigger => {
-                ((base_size * 1.5).max(5.0) as usize) | 1
-            },
-            brush_system::BrushType::Mop => {
-                ((base_size * 2.5).max(9.0) as usize) | 1
-            },
-            brush_system::BrushType::Round => {
-                ((base_size * 2.0).max(7.0) as usize) | 1
-            },
-            brush_system::BrushType::Filbert => {
-                ((base_size * 2.0).max(7.0) as usize) | 1
-            },
-        };
-        
-        // Generate brush mask
-        let mask = self.brush_manager.generate_brush_mask(mask_size);
-        
-        // Apply the mask
-        let center = mask_size as i32 / 2;
-        let width = self.current_state.width as i32;
-        let height = self.current_state.height as i32;
-        
-        for dy in 0..mask_size as i32 {
-            for dx in 0..mask_size as i32 {
-                let nx = x + dx - center;
-                let ny = y + dy - center;
-                
-                if nx >= 0 && nx < width && ny >= 0 && ny < height {
-                    let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
-                    
-                    if mask_value > 0.0 {
-                        // Calculate the final color with alpha blending
-                        let alpha = (color.a() as f32 * mask_value) as u8;
-                        let new_color = if self.current_tool == Tool::Eraser {
-                            None // Eraser removes pixels completely
-                        } else if alpha > 0 {
-                            Some(Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha))
-                        } else {
-                            None
-                        };
-                        
-                        self.record_change(nx as usize, ny as usize, new_color);
-                    }
+        // Collect changes first, then apply them
+        let mut changes = Vec::new();
+        {
+            let mut record_change = |x: usize, y: usize, new_color: Option<Color32>| {
+                if is_eraser {
+                    changes.push((x, y, None));
+                } else {
+                    changes.push((x, y, new_color));
                 }
-            }
+            };
+            
+            self.brush_manager.draw_point(x, y, color, pressure, &mut record_change);
+        }
+        
+        // Apply changes
+        for (x, y, color) in changes {
+            self.record_change(x, y, color);
         }
         
         self.texture_dirty = true;
@@ -2003,6 +2014,75 @@ impl eframe::App for MyApp {
                                                         .logarithmic(true)
                                                         .suffix("x"));
                                                 });
+                                                
+                                                ui.add_space(RustiqueTheme::SPACING_MD);
+                                                ui.separator();
+                                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                                
+                                                ui.label(RustiqueTheme::body_text("Pressure Settings"));
+                                                ui.add_space(RustiqueTheme::SPACING_XS);
+                                                
+                                                ui.horizontal(|ui| {
+                                                    ui.checkbox(&mut paint_app.pressure_enabled, 
+                                                               RustiqueTheme::muted_text("Enable Pressure"));
+                                                });
+                                                
+                                                if paint_app.pressure_enabled {
+                                                    ui.add_space(RustiqueTheme::SPACING_XS);
+                                                    
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(RustiqueTheme::muted_text("Smoothing:"));
+                                                        ui.add(egui::Slider::new(&mut paint_app.pressure_smoothing, 0.0..=1.0)
+                                                            .suffix("%"));
+                                                    });
+                                                    
+                                                    ui.add_space(RustiqueTheme::SPACING_XS);
+                                                    
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(RustiqueTheme::muted_text(&format!("Current: {:.2}", paint_app.current_pressure)));
+                                                        
+                                                        // Pressure indicator bar
+                                                        let bar_rect = ui.allocate_space(egui::Vec2::new(100.0, 10.0)).1;
+                                                        ui.painter().rect_filled(bar_rect, 2.0, egui::Color32::DARK_GRAY);
+                                                        let fill_width = bar_rect.width() * paint_app.current_pressure;
+                                                        let fill_rect = egui::Rect::from_min_size(
+                                                            bar_rect.min, 
+                                                            egui::Vec2::new(fill_width, bar_rect.height())
+                                                        );
+                                                        ui.painter().rect_filled(fill_rect, 2.0, egui::Color32::from_rgb(100, 200, 100));
+                                                    });
+                                                    
+                                                    ui.add_space(RustiqueTheme::SPACING_XS);
+                                                    
+                                                    // Brush pressure settings
+                                                    let active_brush = paint_app.brush_manager.active_brush_mut();
+                                                    
+                                                    ui.horizontal(|ui| {
+                                                        ui.checkbox(&mut active_brush.pressure_affects_size, 
+                                                                   RustiqueTheme::muted_text("Affects Size"));
+                                                    });
+                                                    
+                                                    if active_brush.pressure_affects_size {
+                                                        ui.horizontal(|ui| {
+                                                            ui.label(RustiqueTheme::muted_text("Min Size:"));
+                                                            ui.add(egui::Slider::new(&mut active_brush.pressure_size_min, 0.1..=1.0)
+                                                                .suffix("%"));
+                                                        });
+                                                    }
+                                                    
+                                                    ui.horizontal(|ui| {
+                                                        ui.checkbox(&mut active_brush.pressure_affects_opacity, 
+                                                                   RustiqueTheme::muted_text("Affects Opacity"));
+                                                    });
+                                                    
+                                                    if active_brush.pressure_affects_opacity {
+                                                        ui.horizontal(|ui| {
+                                                            ui.label(RustiqueTheme::muted_text("Min Opacity:"));
+                                                            ui.add(egui::Slider::new(&mut active_brush.pressure_opacity_min, 0.0..=1.0)
+                                                                .suffix("%"));
+                                                        });
+                                                    }
+                                                }
                                             });
                                         });
                                         
@@ -2327,6 +2407,17 @@ impl eframe::App for MyApp {
                            !(response.dragged_by(egui::PointerButton::Middle) || 
                              response.clicked_by(egui::PointerButton::Middle)) {
                             if let Some(pos) = response.interact_pointer_pos() {
+                                // Capture pressure from input (fallback to 1.0 if not available)
+                                // Note: Real pressure detection would require platform-specific APIs
+                                // For now, we simulate pressure based on drawing state
+                                let raw_pressure = if paint_app.is_drawing { 
+                                    // Simulate variable pressure for continuous strokes
+                                    0.7 + 0.3 * ((response.ctx.input(|i| i.time) * 3.0).sin() * 0.5 + 0.5) as f32
+                                } else { 
+                                    1.0 
+                                };
+                                paint_app.update_pressure(raw_pressure);
+                                
                                 let canvas_pos = to_canvas.transform_pos(pos);
                                 let x = canvas_pos.x as usize;
                                 let y = canvas_pos.y as usize;
