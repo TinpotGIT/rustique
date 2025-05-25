@@ -245,6 +245,10 @@ struct PaintApp {
     pressure_history: VecDeque<f32>,
     pressure_smoothing: f32,
     pressure_enabled: bool,
+    last_cursor_pos: Option<Pos2>,
+    last_cursor_time: Option<f64>,
+    velocity_sensitivity: f32,
+    max_velocity_for_min_pressure: f32,
 }
 
 impl PaintApp {
@@ -281,8 +285,12 @@ impl PaintApp {
             language,
             current_pressure: 1.0,
             pressure_history: VecDeque::with_capacity(10),
-            pressure_smoothing: 0.3,
-            pressure_enabled: true,
+            pressure_smoothing: 0.8,
+            pressure_enabled: false,
+            last_cursor_pos: None,
+            last_cursor_time: None,
+            velocity_sensitivity: 0.9,
+            max_velocity_for_min_pressure: 1900.0,
         }
     }
 
@@ -368,8 +376,12 @@ impl PaintApp {
             language,
             current_pressure: 1.0,
             pressure_history: VecDeque::with_capacity(10),
-            pressure_smoothing: 0.3,
-            pressure_enabled: true,
+            pressure_smoothing: 0.8,
+            pressure_enabled: false,
+            last_cursor_pos: None,
+            last_cursor_time: None,
+            velocity_sensitivity: 0.9,
+            max_velocity_for_min_pressure: 1900.0,
         }
     }
 
@@ -407,6 +419,49 @@ impl PaintApp {
         }
         
         self.current_pressure = self.current_pressure.clamp(0.1, 1.0);
+    }
+    
+    // Calculate pressure based on cursor velocity
+    fn update_pressure_from_velocity(&mut self, cursor_pos: Pos2, current_time: f64) {
+        if !self.pressure_enabled {
+            self.current_pressure = 1.0;
+            return;
+        }
+        
+        let pressure = if let (Some(last_pos), Some(last_time)) = (self.last_cursor_pos, self.last_cursor_time) {
+            let delta_time = (current_time - last_time).max(0.001); // Avoid division by zero
+            let distance = (cursor_pos - last_pos).length();
+            let velocity = distance / delta_time as f32;
+            
+            // Convert velocity to pressure (high velocity = low pressure)
+            // Use exponential curve for more natural feel
+            let normalized_velocity = (velocity / self.max_velocity_for_min_pressure).min(1.0);
+            let base_pressure = 1.0 - (normalized_velocity * self.velocity_sensitivity);
+            
+            // Ensure minimum pressure of 0.1
+            base_pressure.clamp(0.1, 1.0)
+        } else {
+            1.0 // Default pressure for first frame
+        };
+        
+        // Add to history for smoothing
+        self.pressure_history.push_back(pressure);
+        if self.pressure_history.len() > 10 {
+            self.pressure_history.pop_front();
+        }
+        
+        // Calculate smoothed pressure
+        if self.pressure_history.len() > 1 {
+            let average: f32 = self.pressure_history.iter().sum::<f32>() / self.pressure_history.len() as f32;
+            self.current_pressure = self.current_pressure * (1.0 - self.pressure_smoothing) + 
+                                  average * self.pressure_smoothing;
+        } else {
+            self.current_pressure = pressure;
+        }
+        
+        // Update tracking variables
+        self.last_cursor_pos = Some(cursor_pos);
+        self.last_cursor_time = Some(current_time);
     }
     
     // Get effective pressure for drawing
@@ -537,6 +592,10 @@ impl PaintApp {
                             pressure_history: VecDeque::with_capacity(10),
                             pressure_smoothing: 0.3,
                             pressure_enabled: true,
+                            last_cursor_pos: None,
+                            last_cursor_time: None,
+                            velocity_sensitivity: 0.8,
+                            max_velocity_for_min_pressure: 800.0,
                         };
                         
                         Ok(app)
@@ -2039,6 +2098,22 @@ impl eframe::App for MyApp {
                                                     ui.add_space(RustiqueTheme::SPACING_XS);
                                                     
                                                     ui.horizontal(|ui| {
+                                                        ui.label(RustiqueTheme::muted_text("Velocity Sensitivity:"));
+                                                        ui.add(egui::Slider::new(&mut paint_app.velocity_sensitivity, 0.0..=1.0)
+                                                            .suffix("%"));
+                                                    });
+                                                    
+                                                    ui.add_space(RustiqueTheme::SPACING_XS);
+                                                    
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(RustiqueTheme::muted_text("Max Velocity:"));
+                                                        ui.add(egui::Slider::new(&mut paint_app.max_velocity_for_min_pressure, 100.0..=2000.0)
+                                                            .suffix("px/s"));
+                                                    });
+                                                    
+                                                    ui.add_space(RustiqueTheme::SPACING_XS);
+                                                    
+                                                    ui.horizontal(|ui| {
                                                         ui.label(RustiqueTheme::muted_text(&format!("Current: {:.2}", paint_app.current_pressure)));
                                                         
                                                         // Pressure indicator bar
@@ -2049,7 +2124,12 @@ impl eframe::App for MyApp {
                                                             bar_rect.min, 
                                                             egui::Vec2::new(fill_width, bar_rect.height())
                                                         );
-                                                        ui.painter().rect_filled(fill_rect, 2.0, egui::Color32::from_rgb(100, 200, 100));
+                                                        let color = if paint_app.current_pressure < 0.5 {
+                                                            egui::Color32::from_rgb(255, 100, 100) // Red for low pressure
+                                                        } else {
+                                                            egui::Color32::from_rgb(100, 255, 100) // Green for high pressure
+                                                        };
+                                                        ui.painter().rect_filled(fill_rect, 2.0, color);
                                                     });
                                                     
                                                     ui.add_space(RustiqueTheme::SPACING_XS);
@@ -2407,16 +2487,9 @@ impl eframe::App for MyApp {
                            !(response.dragged_by(egui::PointerButton::Middle) || 
                              response.clicked_by(egui::PointerButton::Middle)) {
                             if let Some(pos) = response.interact_pointer_pos() {
-                                // Capture pressure from input (fallback to 1.0 if not available)
-                                // Note: Real pressure detection would require platform-specific APIs
-                                // For now, we simulate pressure based on drawing state
-                                let raw_pressure = if paint_app.is_drawing { 
-                                    // Simulate variable pressure for continuous strokes
-                                    0.7 + 0.3 * ((response.ctx.input(|i| i.time) * 3.0).sin() * 0.5 + 0.5) as f32
-                                } else { 
-                                    1.0 
-                                };
-                                paint_app.update_pressure(raw_pressure);
+                                // Calculate pressure based on cursor velocity
+                                let current_time = response.ctx.input(|i| i.time);
+                                paint_app.update_pressure_from_velocity(pos, current_time);
                                 
                                 let canvas_pos = to_canvas.transform_pos(pos);
                                 let x = canvas_pos.x as usize;
@@ -2446,6 +2519,9 @@ impl eframe::App for MyApp {
                         } else {
                             paint_app.save_state();
                             paint_app.last_position = None;
+                            // Reset cursor tracking for pressure calculation
+                            paint_app.last_cursor_pos = None;
+                            paint_app.last_cursor_time = None;
                         }
                     }
 
@@ -2471,9 +2547,30 @@ impl eframe::App for MyApp {
     }
 }
 
+// Load application icon from PNG file
+fn load_app_icon() -> Option<eframe::IconData> {
+    let icon_path = "rustique_icon.png";
+    
+    if let Ok(icon_bytes) = std::fs::read(icon_path) {
+        if let Ok(icon_image) = image::load_from_memory(&icon_bytes) {
+            let icon_rgba = icon_image.to_rgba8();
+            let (width, height) = (icon_rgba.width(), icon_rgba.height());
+            
+            return Some(eframe::IconData {
+                rgba: icon_rgba.into_raw(),
+                width,
+                height,
+            });
+        }
+    }
+    
+    None
+}
+
 fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(WINDOW_WIDTH, WINDOW_HEIGHT)),
+        icon_data: load_app_icon(),
         ..Default::default()
     };
     eframe::run_native(
