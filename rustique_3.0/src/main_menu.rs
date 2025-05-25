@@ -185,7 +185,7 @@ impl MainMenu {
     fn draw_title_section_mobile(&mut self, ui: &mut egui::Ui) {
         if let Some(logo) = &self.logo {
             let max_width = ui.available_width() * 0.8;
-            let logo_size = Vec2::new(max_width.min(200.0), max_width.min(200.0) * 0.5);
+            let logo_size = Vec2::new(max_width.min(260.0), max_width.min(260.0) * 0.35);
             ui.image(logo, logo_size);
         } else {
             ui.label(
@@ -206,7 +206,7 @@ impl MainMenu {
     fn draw_title_section_tablet(&mut self, ui: &mut egui::Ui) {
         if let Some(logo) = &self.logo {
             let max_width = ui.available_width() * 0.6;
-            let logo_size = Vec2::new(max_width.min(220.0), max_width.min(220.0) * 0.5);
+            let logo_size = Vec2::new(max_width.min(280.0), max_width.min(280.0) * 0.35);
             ui.image(logo, logo_size);
         } else {
             ui.label(
@@ -796,7 +796,7 @@ impl MainMenu {
     
     fn draw_title_section(&mut self, ui: &mut egui::Ui) {
         if let Some(logo) = &self.logo {
-            let logo_size = Vec2::new(250.0, 125.0);
+            let logo_size = Vec2::new(360.0, 120.0);
             ui.image(logo, logo_size);
         } else {
             ui.label(

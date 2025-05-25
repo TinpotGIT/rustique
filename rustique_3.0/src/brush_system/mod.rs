@@ -1,8 +1,7 @@
 use eframe::egui;
-use egui::{Color32, Vec2, Pos2, Rect, TextureHandle, Stroke};
+use egui::{Color32, Vec2, Pos2, Rect, Stroke};
 use std::f32::consts::PI;
 use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
 
 // Les différents types de pinceaux selon l'image fournie
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -15,7 +14,6 @@ pub enum BrushType {
     Angle,   // Pinceau biseauté pour des traits variés selon l'angle
     Mop,     // Pinceau large et doux pour des zones diffuses
     Rigger,  // Pinceau très fin pour les détails précis
-    Custom,  // Pinceau personnalisé avec texture importée
 }
 
 impl BrushType {
@@ -31,7 +29,6 @@ impl BrushType {
             BrushType::Angle => get_text("brush_angle", language),
             BrushType::Mop => get_text("brush_mop", language),
             BrushType::Rigger => get_text("brush_rigger", language),
-            BrushType::Custom => get_text("brush_custom", language),
         }
     }
     
@@ -46,11 +43,10 @@ impl BrushType {
             BrushType::Angle => 5,
             BrushType::Mop => 6,
             BrushType::Rigger => 7,
-            BrushType::Custom => 8,
         }
     }
     
-    // Liste de tous les types de pinceaux standard (hors Custom)
+    // Liste de tous les types de pinceaux
     pub fn all_types() -> Vec<BrushType> {
         vec![
             BrushType::Round,
@@ -83,17 +79,11 @@ pub struct BrushProperties {
     // Sensibilité à la pression (simulation)
     pub pressure_sensitivity: f32,
     
-    // Texture personnalisée (chemin de l'image)
-    pub texture_path: Option<String>,
-    
     // Modes de fusion (normal, additif, soustractif, etc.)
     pub blend_mode: BlendMode,
     
     // Espacement entre les points lors du tracé
     pub spacing: f32,
-    
-    // Paramètres de bruit/texture
-    pub texture_strength: f32,
     
     // Dureté des bords (0.0 = très doux, 1.0 = dur)
     pub hardness: f32,
@@ -120,10 +110,8 @@ impl Default for BrushProperties {
             stretch_factor: 1.0,
             angle_sensitivity: 0.0,
             pressure_sensitivity: 0.5,
-            texture_path: None,
             blend_mode: BlendMode::Normal,
             spacing: 0.05, // Espacement très réduit par défaut
-            texture_strength: 0.0, // Pas de texture par défaut
             hardness: 1.0,         // Dur par défaut pour des bords nets
             base_rotation: 0.0,
         }
@@ -143,33 +131,28 @@ impl BrushProperties {
                 properties.angle_sensitivity = 0.0; // Pas sensible à l'angle
                 properties.hardness = 1.0; // Bords nets
                 properties.spacing = 0.05; // Espacement très réduit
-                properties.texture_strength = 0.0; // Pas de texture par défaut
             },
             BrushType::Flat => {
                 properties.stretch_factor = 4.0;  // 4 fois plus large que haut
                 properties.angle_sensitivity = 0.8; // Sensible à l'angle
                 properties.hardness = 1.0;
                 properties.spacing = 0.05; // Espacement très réduit
-                properties.texture_strength = 0.0;
             },
             BrushType::Bright => {
                 properties.stretch_factor = 3.0;  // 3 fois plus large que haut
                 properties.angle_sensitivity = 0.7;
                 properties.hardness = 1.0;
                 properties.spacing = 0.05; // Espacement très réduit
-                properties.texture_strength = 0.0;
             },
             BrushType::Filbert => {
                 properties.stretch_factor = 2.5;
                 properties.angle_sensitivity = 0.6;
                 properties.hardness = 0.8;
                 properties.spacing = 0.05; // Espacement très réduit
-                properties.texture_strength = 0.0;
             },
             BrushType::Fan => {
                 properties.stretch_factor = 3.0;
                 properties.angle_sensitivity = 0.8; 
-                properties.texture_strength = 0.0;   // Texture intégrée dans la forme
                 properties.hardness = 1.0;
                 properties.spacing = 0.08; // Un peu plus d'espacement pour l'effet
             },
@@ -179,26 +162,18 @@ impl BrushProperties {
                 properties.base_rotation = PI / 4.0; // 45 degrés
                 properties.hardness = 1.0;
                 properties.spacing = 0.05; // Espacement très réduit
-                properties.texture_strength = 0.0;
             },
             BrushType::Mop => {
                 properties.stretch_factor = 1.2;
                 properties.angle_sensitivity = 0.1; // Peu sensible à l'angle
                 properties.hardness = 0.5;          // Bords doux
                 properties.spacing = 0.03; // Espacement très réduit pour douceur
-                properties.texture_strength = 0.0;
             },
             BrushType::Rigger => {
                 properties.stretch_factor = 0.5;    // Plus haut que large
                 properties.angle_sensitivity = 0.2;
                 properties.hardness = 1.0;         // Bords très durs
                 properties.spacing = 0.02; // Espacement minimal pour précision
-                properties.texture_strength = 0.0;
-            },
-            BrushType::Custom => {
-                // Les valeurs par défaut sont bonnes pour Custom
-                properties.texture_strength = 0.3; // Un peu de texture pour Custom
-                properties.spacing = 0.05; // Espacement très réduit
             },
         }
         
@@ -218,13 +193,6 @@ impl BrushProperties {
                         // Pinceau rond doux
                         let mut p = base.clone();
                         p.hardness = 0.4;
-                        p.texture_strength = 0.1;
-                        p
-                    },
-                    {
-                        // Pinceau rond texturé
-                        let mut p = base.clone();
-                        p.texture_strength = 0.3;
                         p
                     },
                 ]
@@ -281,9 +249,6 @@ pub struct BrushManager {
     // Index du pinceau actif
     pub active_brush_index: usize,
     
-    // Textures chargées pour les pinceaux personnalisés (path -> texture)
-    texture_cache: HashMap<String, TextureHandle>,
-    
     // Angle actuel du pinceau (en radians)
     pub current_angle: f32,
     
@@ -307,7 +272,6 @@ impl Default for BrushManager {
         Self {
             brushes,
             active_brush_index: 0,
-            texture_cache: HashMap::new(),
             current_angle: 0.0,
             last_position: None,
             current_size: 3.0,
@@ -335,183 +299,6 @@ impl BrushManager {
     pub fn set_active_brush(&mut self, index: usize) {
         if index < self.brushes.len() {
             self.active_brush_index = index;
-        }
-    }
-    
-    // Ajouter un nouveau pinceau personnalisé
-    pub fn add_custom_brush(&mut self, properties: BrushProperties) -> usize {
-        self.brushes.push(properties);
-        self.brushes.len() - 1
-    }
-    
-    // Supprimer un pinceau
-    pub fn remove_brush(&mut self, index: usize) {
-        if index < self.brushes.len() && self.brushes.len() > 1 {
-            self.brushes.remove(index);
-            if self.active_brush_index >= self.brushes.len() {
-                self.active_brush_index = self.brushes.len() - 1;
-            }
-        }
-    }
-    
-    // Charger une texture pour un pinceau depuis un chemin
-    pub fn load_brush_texture(&mut self, path: &str, ctx: &egui::Context) -> Option<TextureHandle> {
-        // Vérifier si la texture est déjà en cache
-        if let Some(texture) = self.texture_cache.get(path) {
-            return Some(texture.clone());
-        }
-        
-        // Essayer de charger l'image
-        if let Ok(image) = image::open(path) {
-            // Convertir en RGBA et redimensionner si nécessaire
-            let image_rgba = image.to_rgba8();
-            let (width, height) = (image_rgba.width(), image_rgba.height());
-            
-            // Redimensionner si l'image est trop grande (max 128x128 pour les pinceaux)
-            let max_size = 128;
-            let resized_image = if width > max_size || height > max_size {
-                let scale = max_size as f32 / width.max(height) as f32;
-                let new_width = (width as f32 * scale) as u32;
-                let new_height = (height as f32 * scale) as u32;
-                image::imageops::resize(&image_rgba, new_width, new_height, image::imageops::FilterType::Lanczos3)
-            } else {
-                image_rgba
-            };
-            
-            // Créer une texture egui
-            let size = [resized_image.width() as _, resized_image.height() as _];
-            let image_data = egui::ColorImage::from_rgba_unmultiplied(
-                size,
-                resized_image.as_flat_samples().as_slice()
-            );
-            
-            // Charger dans le contexte egui
-            let texture = ctx.load_texture(
-                path,
-                image_data,
-                egui::TextureOptions::LINEAR
-            );
-            
-            // Ajouter au cache
-            self.texture_cache.insert(path.to_string(), texture.clone());
-            
-            Some(texture)
-        } else {
-            eprintln!("Failed to load brush texture: {}", path);
-            None
-        }
-    }
-    
-    // Générer un masque de pinceau personnalisé à partir d'une texture chargée
-    pub fn generate_texture_brush_mask(&self, size: usize, texture_path: &str) -> Vec<f32> {
-        let mut mask = vec![0.0; size * size];
-        
-        // Essayer de charger l'image directement pour la conversion en masque
-        if let Ok(image) = image::open(texture_path) {
-            let image_gray = image.to_luma8();
-            let (img_width, img_height) = (image_gray.width() as f32, image_gray.height() as f32);
-            
-            let center = size as f32 / 2.0;
-            
-            for y in 0..size {
-                for x in 0..size {
-                    let rx = (x as f32 - center) / center;
-                    let ry = (y as f32 - center) / center;
-                    let dist = (rx * rx + ry * ry).sqrt();
-                    
-                    if dist <= 1.0 {
-                        // Mapper les coordonnées du masque vers l'image
-                        let img_x = ((rx + 1.0) * 0.5 * img_width) as u32;
-                        let img_y = ((ry + 1.0) * 0.5 * img_height) as u32;
-                        
-                        if img_x < img_width as u32 && img_y < img_height as u32 {
-                            let pixel = image_gray.get_pixel(img_x, img_y);
-                            let intensity = pixel[0] as f32 / 255.0;
-                            
-                            // Inverser l'intensité pour que le noir soit opaque
-                            let opacity = 1.0 - intensity;
-                            
-                            // Appliquer un masque circulaire pour limiter la forme
-                            let fade = (1.0 - dist).max(0.0);
-                            mask[y * size + x] = opacity * fade;
-                        }
-                    }
-                }
-            }
-        } else {
-            // Fallback vers des motifs procéduraux améliorés
-            self.generate_procedural_texture_mask(size, texture_path, &mut mask);
-        }
-        
-        mask
-    }
-    
-    // Générer des motifs procéduraux améliorés pour les textures
-    fn generate_procedural_texture_mask(&self, size: usize, texture_path: &str, mask: &mut Vec<f32>) {
-        let center = size as f32 / 2.0;
-        let filename = texture_path.to_lowercase();
-        
-        for y in 0..size {
-            for x in 0..size {
-                let rx = (x as f32 - center) / center;
-                let ry = (y as f32 - center) / center;
-                let dist = (rx * rx + ry * ry).sqrt();
-                
-                if dist <= 1.0 {
-                    let value = if filename.contains("splatter") || filename.contains("éclaboussure") {
-                        // Motif d'éclaboussure amélioré
-                        let noise1 = ((rx * 12.0).sin() * (ry * 8.0).cos()).abs();
-                        let noise2 = ((rx * 6.0 + ry * 10.0).sin()).abs();
-                        let noise3 = ((rx * 15.0 - ry * 5.0).cos()).abs();
-                        let splatter = (noise1 * noise2 + noise3 * 0.3).min(1.0);
-                        
-                        if splatter > 0.4 { 
-                            (1.0 - dist) * splatter * 0.8 
-                        } else { 
-                            0.0 
-                        }
-                    } else if filename.contains("grunge") || filename.contains("rugueux") {
-                        // Motif grunge plus détaillé
-                        let noise1 = ((rx * 10.0).sin() + (ry * 8.0).cos()) * 0.5;
-                        let noise2 = ((rx * 16.0 + ry * 12.0).sin()) * 0.3;
-                        let noise3 = ((rx * ry * 20.0).sin()) * 0.2;
-                        let combined = noise1 + noise2 + noise3;
-                        
-                        ((1.0 - dist + combined) * 0.7).max(0.0).min(1.0)
-                    } else if filename.contains("stipple") || filename.contains("pointillé") {
-                        // Motif pointillé plus réaliste
-                        let grid_size = 4.0;
-                        let grid_x = (rx * grid_size).floor();
-                        let grid_y = (ry * grid_size).floor();
-                        let hash = ((grid_x + grid_y * 7.0) * 123.456).sin().abs();
-                        let dot_size = hash * 0.6 + 0.2;
-                        
-                        let local_x = (rx * grid_size) - grid_x;
-                        let local_y = (ry * grid_size) - grid_y;
-                        let local_dist = ((local_x - 0.5).powf(2.0) + (local_y - 0.5).powf(2.0)).sqrt();
-                        
-                        if local_dist < dot_size { 
-                            ((1.0 - dist) * (1.0 - local_dist / dot_size)).max(0.0)
-                        } else { 
-                            0.0 
-                        }
-                    } else if filename.contains("watercolor") || filename.contains("aquarelle") {
-                        // Motif aquarelle fluide
-                        let wave1 = ((rx * 3.0 + ry * 2.0).sin() * 0.3).abs();
-                        let wave2 = ((rx * 5.0 - ry * 4.0).cos() * 0.2).abs();
-                        let flow = (wave1 + wave2 + 0.5).min(1.0);
-                        
-                        let fade = (1.0 - dist.powf(1.5)).max(0.0);
-                        fade * flow * 0.6
-                    } else {
-                        // Motif par défaut amélioré
-                        let texture = ((rx * 6.0).sin() * (ry * 6.0).cos()).abs() * 0.4 + 0.6;
-                        (1.0 - dist) * texture * 0.8
-                    };
-                    
-                    mask[y * size + x] = value.clamp(0.0, 1.0);
-                }
-            }
         }
     }
     
@@ -673,21 +460,6 @@ impl BrushManager {
                         
                         if rx_rot.abs() <= 0.08 && ry_rot.abs() <= 0.9 {
                             value = 1.0;
-                        }
-                    },
-                    
-                    BrushType::Custom => {
-                        // Pinceau personnalisé avec texture réelle
-                        if let Some(texture_path) = &active.texture_path {
-                            // Utiliser le générateur de texture amélioré
-                            let texture_mask = self.generate_texture_brush_mask(size, texture_path);
-                            return texture_mask; // Retourner directement le masque de texture
-                        } else {
-                            // Comportement par défaut - cercle simple
-                            let dist = (rx * rx + ry * ry).sqrt();
-                            if dist <= 1.0 {
-                                value = 1.0; // Forme pleine sans dégradé
-                            }
                         }
                     },
                 }
@@ -910,101 +682,6 @@ impl BrushManager {
                 }
             });
         
-        // Bouton pour charger une texture
-        ui.add_space(10.0);
-        ui.separator();
-        ui.horizontal(|ui| {
-            if ui.button(get_text("load_texture", language)).clicked() {
-                // Ouvrir un dialogue de fichier pour charger une texture
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Images", &["png", "jpg", "jpeg", "bmp", "gif", "tiff", "webp"])
-                    .set_title(&get_text("select_brush_texture", language))
-                    .pick_file()
-                {
-                    if let Some(path_str) = path.to_str() {
-                        // Créer un nouveau pinceau personnalisé avec cette texture
-                        let mut new_brush = BrushProperties::from_type(BrushType::Custom);
-                        new_brush.texture_path = Some(path_str.to_string());
-                        
-                        // Déterminer les propriétés basées sur le nom du fichier
-                        let filename = path.file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("")
-                            .to_lowercase();
-                        
-                        if filename.contains("splatter") || filename.contains("éclaboussure") {
-                            new_brush.texture_strength = 0.8;
-                            new_brush.spacing = 0.4;
-                            new_brush.hardness = 0.6;
-                        } else if filename.contains("grunge") || filename.contains("rugueux") {
-                            new_brush.texture_strength = 0.7;
-                            new_brush.hardness = 0.4;
-                            new_brush.spacing = 0.3;
-                        } else if filename.contains("watercolor") || filename.contains("aquarelle") {
-                            new_brush.hardness = 0.2;
-                            new_brush.spacing = 0.15;
-                            new_brush.texture_strength = 0.5;
-                        } else if filename.contains("stipple") || filename.contains("pointillé") {
-                            new_brush.spacing = 0.5;
-                            new_brush.hardness = 0.9;
-                            new_brush.texture_strength = 0.6;
-                        } else {
-                            // Propriétés par défaut pour texture inconnue
-                            new_brush.texture_strength = 0.5;
-                            new_brush.spacing = 0.2;
-                            new_brush.hardness = 0.7;
-                        }
-                        
-                        let index = self.add_custom_brush(new_brush);
-                        self.set_active_brush(index);
-                        changed = true;
-                    }
-                }
-            }
-        });
-        
-        // Afficher les pinceaux personnalisés existants
-        let custom_brushes: Vec<(usize, String)> = self.brushes
-            .iter()
-            .enumerate()
-            .filter_map(|(i, brush)| {
-                if brush.brush_type == BrushType::Custom {
-                    let name = if let Some(path) = &brush.texture_path {
-                        std::path::Path::new(path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("Custom")
-                            .to_string()
-                    } else {
-                        "Custom Pattern".to_string()
-                    };
-                    Some((i, name))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        
-        if !custom_brushes.is_empty() {
-            ui.add_space(5.0);
-            ui.label(get_text("custom_brushes", language));
-            
-            for (i, name) in custom_brushes {
-                ui.horizontal(|ui| {
-                    let is_active = i == self.active_brush_index;
-                    if ui.selectable_label(is_active, &name).clicked() {
-                        self.active_brush_index = i;
-                        changed = true;
-                    }
-                    
-                    if ui.small_button("🗑").on_hover_text(get_text("delete", language)).clicked() {
-                        self.remove_brush(i);
-                        changed = true;
-                    }
-                });
-            }
-        }
-        
         changed
     }
     
@@ -1110,35 +787,6 @@ impl BrushManager {
                     Stroke::new(1.5, Color32::BLACK)
                 );
             },
-            BrushType::Custom => {
-                // Motif de texture personnalisée
-                let center = rect.center();
-                let size = rect.width() * 0.12;
-                
-                // Dessiner un motif en damier pour représenter la texture
-                for i in -1..=1 {
-                    for j in -1..=1 {
-                        if (i + j) % 2 == 0 {
-                            let x = center.x + i as f32 * size * 1.2;
-                            let y = center.y + j as f32 * size * 1.2;
-                            let small_rect = Rect::from_center_size(
-                                Pos2::new(x, y),
-                                Vec2::splat(size)
-                            );
-                            painter.rect_filled(small_rect, 2.0, Color32::from_gray(60));
-                        }
-                    }
-                }
-                
-                // Ajouter un petit symbole au centre
-                painter.text(
-                    center,
-                    egui::Align2::CENTER_CENTER,
-                    "T",
-                    egui::FontId::proportional(12.0),
-                    Color32::BLACK,
-                );
-            }
         }
     }
 }

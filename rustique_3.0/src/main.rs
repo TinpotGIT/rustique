@@ -998,9 +998,6 @@ impl PaintApp {
             brush_system::BrushType::Filbert => {
                 ((base_size * 2.0).max(7.0) as usize) | 1
             },
-            _ => {
-                ((base_size * 2.0).max(7.0) as usize) | 1
-            }
         };
         
         // Generate brush mask
@@ -1093,9 +1090,6 @@ impl PaintApp {
             brush_system::BrushType::Filbert => {
                 ((base_size * 2.0).max(7.0) as usize) | 1
             },
-            _ => {
-                ((base_size * 2.0).max(7.0) as usize) | 1
-            }
         };
         
         // Generate brush mask
@@ -1184,9 +1178,6 @@ impl PaintApp {
             brush_system::BrushType::Filbert => {
                 ((base_size * 2.0).max(7.0) as usize) | 1
             },
-            _ => {
-                ((base_size * 2.0).max(7.0) as usize) | 1
-            }
         };
         
         // Generate brush mask
