@@ -15,7 +15,6 @@ pub fn get_text(key: &str, language: Language) -> String {
 
 fn get_french_text(key: &str) -> String {
     let translations: HashMap<&str, &str> = [
-        // Menu principal
         ("language", "Langue"),
         ("new_file", "Nouveau Fichier"),
         ("open_project", "Ouvrir Projet"), 
@@ -28,25 +27,17 @@ fn get_french_text(key: &str) -> String {
         ("open_png", "Ouvrir un fichier PNG"),
         ("open_rustiq", "Ouvrir un fichier Rustiq"),
         ("open_file", "Ouvrir un fichier"),
-        
-        // Onglets et panneaux
         ("layers", "Calques"),
         ("tools", "Outils"),
         ("save_options", "Options de sauvegarde"),
-        
-        // Boutons de calques
         ("layer", "Calque"),
         ("up", "Haut"),
         ("down", "Bas"),
-        
-        // Outils
         ("brush", "Pinceau"),
         ("eraser", "Gomme"),
         ("paint_bucket", "Pot de peinture"),
         ("color_picker", "Pipette"),
         ("line", "Ligne"),
-        
-        // Options
         ("brush_size", "Taille du pinceau:"),
         ("eraser_size", "Taille de la gomme:"),
         ("colors", "Couleurs:"),
@@ -54,24 +45,16 @@ fn get_french_text(key: &str) -> String {
         ("secondary", "Secondaire:"),
         ("zoom", "Zoom:"),
         ("saved_colors", "Couleurs sauvegardées:"),
-        
-        // Interactions
         ("left_click_primary", "Clic gauche: définir comme couleur primaire"),
         ("right_click_secondary", "Clic droit: définir comme couleur secondaire"),
         ("middle_click_delete", "Clic molette: supprimer"),
-        
-        // Boutons d'action
         ("return_to_menu", "Retour au menu"),
         ("undo", "Annuler"),
         ("redo", "Refaire"),
         ("save_png", "Sauvegarder PNG"),
         ("save_rustiq", "Sauvegarder Rustiq"),
         ("save_file", "Sauvegarder Fichier"),
-        
-        // Messages d'info
         ("shortcuts_info", "Clic droit: couleur secondaire | Ctrl+Z: Annuler | Ctrl+Y: Refaire | Ctrl+S: Sauvegarder"),
-        
-        // Dialogues
         ("error", "Erreur"),
         ("an_error_occurred", "Une erreur s'est produite"),
         ("save_changes", "Sauvegarder les modifications?"),
@@ -80,8 +63,6 @@ fn get_french_text(key: &str) -> String {
         ("no", "Non"),
         ("cancel", "Annuler"),
         ("rename_layer", "Renommer le calque"),
-        
-        // Erreurs
         ("format_not_supported", "Format de fichier non pris en charge"),
         ("no_previous_path", "Aucun chemin de sauvegarde précédent"),
         ("unable_to_open_png", "Impossible d'ouvrir l'image PNG"),
@@ -91,7 +72,6 @@ fn get_french_text(key: &str) -> String {
         ("error_saving_png", "Erreur lors de la sauvegarde PNG"),
         ("error_saving_image", "Erreur lors de la sauvegarde de l'image"),
         
-        // Interface de peinture
         ("properties", "Propriétés"),
         ("brush_system", "Système de pinceaux"),
         ("tool_settings", "Paramètres d'outils"),
@@ -128,7 +108,6 @@ fn get_french_text(key: &str) -> String {
 
 fn get_english_text(key: &str) -> String {
     let translations: HashMap<&str, &str> = [
-        // Main menu
         ("language", "Language"),
         ("new_file", "New File"),
         ("open_project", "Open Project"),
@@ -141,25 +120,17 @@ fn get_english_text(key: &str) -> String {
         ("open_png", "Open PNG File"),
         ("open_rustiq", "Open Rustiq File"),
         ("open_file", "Open File"),
-        
-        // Tabs and panels
         ("layers", "Layers"),
         ("tools", "Tools"),
         ("save_options", "Save Options"),
-        
-        // Layer buttons
         ("layer", "Layer"),
         ("up", "Up"),
         ("down", "Down"),
-        
-        // Tools
         ("brush", "Brush"),
         ("eraser", "Eraser"),
         ("paint_bucket", "Paint Bucket"),
         ("color_picker", "Color Picker"),
         ("line", "Line"),
-        
-        // Options
         ("brush_size", "Brush Size:"),
         ("eraser_size", "Eraser Size:"),
         ("colors", "Colors:"),
@@ -167,24 +138,16 @@ fn get_english_text(key: &str) -> String {
         ("secondary", "Secondary:"),
         ("zoom", "Zoom:"),
         ("saved_colors", "Saved Colors:"),
-        
-        // Interactions
         ("left_click_primary", "Left-click: set as primary color"),
         ("right_click_secondary", "Right-click: set as secondary color"),
         ("middle_click_delete", "Middle-click: delete"),
-        
-        // Action buttons
         ("return_to_menu", "Return to Menu"),
         ("undo", "Undo"),
         ("redo", "Redo"),
         ("save_png", "Save PNG"),
         ("save_rustiq", "Save Rustiq"),
         ("save_file", "Save File"),
-        
-        // Info messages
         ("shortcuts_info", "Right-click: secondary color | Ctrl+Z: Undo | Ctrl+Y: Redo | Ctrl+S: Save"),
-        
-        // Dialogs
         ("error", "Error"),
         ("an_error_occurred", "An error occurred"),
         ("save_changes", "Save Changes?"),
@@ -193,8 +156,6 @@ fn get_english_text(key: &str) -> String {
         ("no", "No"),
         ("cancel", "Cancel"),
         ("rename_layer", "Rename Layer"),
-        
-        // Errors
         ("format_not_supported", "File format not supported"),
         ("no_previous_path", "No previous save path"),
         ("unable_to_open_png", "Unable to open PNG image"),
@@ -203,8 +164,6 @@ fn get_english_text(key: &str) -> String {
         ("error_reading_file", "Error reading file"),
         ("error_saving_png", "Error saving PNG"),
         ("error_saving_image", "Error saving image"),
-        
-        // Painting interface
         ("properties", "Properties"),
         ("brush_system", "Brush System"),
         ("tool_settings", "Tool Settings"),

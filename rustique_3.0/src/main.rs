@@ -9,7 +9,7 @@ use egui::{Color32, TextureHandle, TextureOptions, Rect, Pos2, Vec2, Stroke, Ric
 use image::{ImageBuffer, Rgba, ImageFormat};
 use std::collections::VecDeque;
 use rfd::FileDialog;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use std::path::PathBuf;
 use std::fs;
 use std::io::Write;
@@ -21,15 +21,12 @@ use brush_system::BrushManager;
 use ui_theme::RustiqueTheme;
 use ui_icons::ToolIcons;
 
-// Constants
 const MAX_UNDO_STEPS: usize = 20;
-const SAVE_STATE_DELAY: Duration = Duration::from_millis(300);
 const CHECKERBOARD_SIZE: usize = 8;
 const WINDOW_WIDTH: f32 = 1200.0;
 const WINDOW_HEIGHT: f32 = 800.0;
 const MAX_SAVED_COLORS: usize = 16;
 
-// Enum to represent different tools
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 enum Tool {
     Brush,
@@ -39,7 +36,6 @@ enum Tool {
     Line,
 }
 
-// Enum to represent supported file formats
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum FileFormat {
     Png,
@@ -77,28 +73,13 @@ impl FileFormat {
             _ => None,
         }
     }
-    
-    fn extension(&self) -> &'static str {
-        match self {
-            FileFormat::Png => "png",
-            FileFormat::Jpeg => "jpg",
-            FileFormat::Bmp => "bmp",
-            FileFormat::Tiff => "tiff",
-            FileFormat::Gif => "gif",
-            FileFormat::WebP => "webp",
-            FileFormat::Rustiq => "rustiq",
-            FileFormat::Unknown => "",
-        }
-    }
 }
 
-// Enum to represent the current state of the application
 enum AppState {
     MainMenu(MainMenu),
     Canvas(PaintApp),
 }
 
-// Layer structure for storing each canvas layer (sans serde)
 #[derive(Clone, PartialEq)]
 struct Layer {
     name: String,
@@ -106,7 +87,6 @@ struct Layer {
     visible: bool,
 }
 
-// Layer structure for serialization
 #[derive(Serialize, Deserialize)]
 struct LayerData {
     name: String,
@@ -114,7 +94,6 @@ struct LayerData {
     visible: bool,
 }
 
-// Structure for saving and loading .rustiq files
 #[derive(Serialize, Deserialize)]
 struct RustiqueFile {
     width: usize,
@@ -128,7 +107,6 @@ struct RustiqueFile {
     eraser_size: i32,
 }
 
-// Optimized canvas state structure with layers
 #[derive(Clone)]
 struct CanvasState {
     width: usize,
@@ -156,7 +134,6 @@ impl CanvasState {
     #[inline]
     fn get(&self, x: usize, y: usize) -> Option<Color32> {
         if x < self.width && y < self.height {
-            // Iterate through layers from top to bottom
             for layer_index in (0..self.layers.len()).rev() {
                 let layer = &self.layers[layer_index];
                 if layer.visible {
@@ -187,14 +164,8 @@ impl CanvasState {
             self.layers[self.active_layer_index].data[idx] = color;
         }
     }
-    
-    #[inline]
-    fn is_visible(&self, layer_index: usize) -> bool {
-        layer_index < self.layers.len() && self.layers[layer_index].visible
-    }
 }
 
-// Store changes for efficient undo/redo
 #[derive(Clone)]
 struct CanvasChange {
     x: usize,
@@ -204,7 +175,6 @@ struct CanvasChange {
     new_color: Option<Color32>,
 }
 
-// Dialog for asking to save before quitting
 enum SaveDialog {
     Hidden,
     AskingSave {
@@ -212,7 +182,6 @@ enum SaveDialog {
     },
 }
 
-// Main struct for the paint application
 struct PaintApp {
     current_state: CanvasState,
     undo_stack: Vec<Vec<CanvasChange>>,
@@ -242,7 +211,6 @@ struct PaintApp {
     save_dialog: SaveDialog,
     language: Language,
     current_pressure: f32,
-    pressure_history: VecDeque<f32>,
     pressure_smoothing: f32,
     pressure_enabled: bool,
     last_cursor_pos: Option<Pos2>,
@@ -252,7 +220,6 @@ struct PaintApp {
 }
 
 impl PaintApp {
-    // Initialize a new PaintApp
     fn new(width: u32, height: u32, language: Language) -> Self {
         let initial_state = CanvasState::new(width as usize, height as usize);
         Self {
@@ -284,7 +251,6 @@ impl PaintApp {
             save_dialog: SaveDialog::Hidden,
             language,
             current_pressure: 1.0,
-            pressure_history: VecDeque::with_capacity(10),
             pressure_smoothing: 0.8,
             pressure_enabled: false,
             last_cursor_pos: None,
@@ -294,7 +260,6 @@ impl PaintApp {
         }
     }
 
-    // Create a PaintApp from a .rustiq file
     fn from_rustiq_file(file: RustiqueFile, language: Language) -> Self {
         let mut canvas = CanvasState {
             width: file.width,
@@ -303,7 +268,6 @@ impl PaintApp {
             active_layer_index: file.active_layer_index,
         };
         
-        // Convert the saved layers to Canvas layers
         for layer_data in file.layers {
             let mut layer = Layer {
                 name: layer_data.name,
@@ -375,7 +339,6 @@ impl PaintApp {
             save_dialog: SaveDialog::Hidden,
             language,
             current_pressure: 1.0,
-            pressure_history: VecDeque::with_capacity(10),
             pressure_smoothing: 0.8,
             pressure_enabled: false,
             last_cursor_pos: None,
@@ -385,7 +348,6 @@ impl PaintApp {
         }
     }
 
-    // New method to detect file format from path
     fn detect_format(path: &str) -> FileFormat {
         PathBuf::from(path)
             .extension()
@@ -394,34 +356,7 @@ impl PaintApp {
             .unwrap_or(FileFormat::Unknown)
     }
     
-    // Update pressure with smoothing
-    fn update_pressure(&mut self, raw_pressure: f32) {
-        if !self.pressure_enabled {
-            self.current_pressure = 1.0;
-            return;
-        }
-        
-        let pressure = raw_pressure.clamp(0.0, 1.0);
-        
-        // Add to history for smoothing
-        self.pressure_history.push_back(pressure);
-        if self.pressure_history.len() > 10 {
-            self.pressure_history.pop_front();
-        }
-        
-        // Calculate smoothed pressure
-        if self.pressure_history.len() > 1 {
-            let average: f32 = self.pressure_history.iter().sum::<f32>() / self.pressure_history.len() as f32;
-            self.current_pressure = self.current_pressure * (1.0 - self.pressure_smoothing) + 
-                                  average * self.pressure_smoothing;
-        } else {
-            self.current_pressure = pressure;
-        }
-        
-        self.current_pressure = self.current_pressure.clamp(0.1, 1.0);
-    }
     
-    // Calculate pressure based on cursor velocity
     fn update_pressure_from_velocity(&mut self, cursor_pos: Pos2, current_time: f64) {
         if !self.pressure_enabled {
             self.current_pressure = 1.0;
@@ -429,42 +364,25 @@ impl PaintApp {
         }
         
         let pressure = if let (Some(last_pos), Some(last_time)) = (self.last_cursor_pos, self.last_cursor_time) {
-            let delta_time = (current_time - last_time).max(0.001); // Avoid division by zero
+            let delta_time = (current_time - last_time).max(0.001);
             let distance = (cursor_pos - last_pos).length();
             let velocity = distance / delta_time as f32;
             
-            // Convert velocity to pressure (high velocity = low pressure)
-            // Use exponential curve for more natural feel
             let normalized_velocity = (velocity / self.max_velocity_for_min_pressure).min(1.0);
             let base_pressure = 1.0 - (normalized_velocity * self.velocity_sensitivity);
             
-            // Ensure minimum pressure of 0.1
             base_pressure.clamp(0.1, 1.0)
         } else {
-            1.0 // Default pressure for first frame
+            1.0
         };
         
-        // Add to history for smoothing
-        self.pressure_history.push_back(pressure);
-        if self.pressure_history.len() > 10 {
-            self.pressure_history.pop_front();
-        }
+        let smoothing_factor = self.pressure_smoothing;
+        self.current_pressure = self.current_pressure * (1.0 - smoothing_factor) + pressure * smoothing_factor;
         
-        // Calculate smoothed pressure
-        if self.pressure_history.len() > 1 {
-            let average: f32 = self.pressure_history.iter().sum::<f32>() / self.pressure_history.len() as f32;
-            self.current_pressure = self.current_pressure * (1.0 - self.pressure_smoothing) + 
-                                  average * self.pressure_smoothing;
-        } else {
-            self.current_pressure = pressure;
-        }
-        
-        // Update tracking variables
         self.last_cursor_pos = Some(cursor_pos);
         self.last_cursor_time = Some(current_time);
     }
     
-    // Get effective pressure for drawing
     fn get_effective_pressure(&self) -> f32 {
         if self.pressure_enabled {
             self.current_pressure
@@ -473,7 +391,6 @@ impl PaintApp {
         }
     }
     
-    // Unified save method
     fn save_file(&mut self, path: &str) -> Result<(), String> {
         let format = Self::detect_format(path);
         
@@ -483,7 +400,6 @@ impl PaintApp {
                 Err(format!("{}: {}", get_text("format_not_supported", self.language), path))
             },
             _ => {
-                // Handle image formats
                 if let Some(image_format) = format.get_image_format() {
                     self.save_as_image(path, image_format)
                 } else {
@@ -493,13 +409,11 @@ impl PaintApp {
         }
     }
     
-    // Save as image with any supported format
     fn save_as_image(&mut self, path: &str, format: ImageFormat) -> Result<(), String> {
         let width = self.current_state.width;
         let height = self.current_state.height;
         let mut img = ImageBuffer::new(width as u32, height as u32);
         
-        // Process rows one by one
         for y in 0..height {
             for x in 0..width {
                 let color = self.current_state.get(x, y).unwrap_or(Color32::TRANSPARENT);
@@ -517,13 +431,11 @@ impl PaintApp {
         }
     }
     
-    // Open any supported file
     fn open_file(path: &str, language: Language) -> Result<Self, String> {
         let format = Self::detect_format(path);
         
         match format {
             FileFormat::Rustiq => {
-                // Open Rustiq file
                 match fs::read_to_string(path) {
                     Ok(content) => {
                         match serde_json::from_str::<RustiqueFile>(&content) {
@@ -542,7 +454,6 @@ impl PaintApp {
                 Err(format!("{}: {}", get_text("format_not_supported", language), path))
             },
             _ => {
-                // Open image file
                 match image::open(path) {
                     Ok(img) => {
                         let width = img.width() as usize;
@@ -553,7 +464,7 @@ impl PaintApp {
                         for y in 0..height {
                             for x in 0..width {
                                 let pixel = rgba_img.get_pixel(x as u32, y as u32);
-                                if pixel[3] > 0 { // Not fully transparent
+                                if pixel[3] > 0 {
                                     let color = Color32::from_rgba_unmultiplied(pixel[0], pixel[1], pixel[2], pixel[3]);
                                     canvas.set(x, y, Some(color));
                                 }
@@ -589,7 +500,6 @@ impl PaintApp {
                             save_dialog: SaveDialog::Hidden,
                             language,
                             current_pressure: 1.0,
-                            pressure_history: VecDeque::with_capacity(10),
                             pressure_smoothing: 0.3,
                             pressure_enabled: true,
                             last_cursor_pos: None,
@@ -606,15 +516,6 @@ impl PaintApp {
         }
     }
     
-    // Create a PaintApp from a PNG file (deprecated but kept for backward compatibility)
-    fn from_png_file(path: &str, language: Language) -> Option<Self> {
-        match Self::open_file(path, language) {
-            Ok(app) => Some(app),
-            Err(_) => None
-        }
-    }
-
-    // Save the current image as a .rustiq file
     fn save_as_rustiq(&mut self, path: &str) -> Result<(), String> {
         let mut layers = Vec::with_capacity(self.current_state.layers.len());
         
@@ -656,13 +557,11 @@ impl PaintApp {
             eraser_size: self.eraser_size,
         };
         
-        // Sérialiser avec gestion d'erreur
         let json = match serde_json::to_string(&rustiq_file) {
             Ok(json) => json,
             Err(e) => return Err(format!("Erreur de sérialisation: {}", e)),
         };
         
-        // Écrire avec gestion d'erreur
         match fs::File::create(path) {
             Ok(mut file) => {
                 match file.write_all(json.as_bytes()) {
@@ -678,29 +577,15 @@ impl PaintApp {
         }
     }
     
-    // Save as PNG (deprecated but kept for backward compatibility)
-    fn save_as_png(&mut self, path: &str) -> Result<(), String> {
-        // Make sure path has .png extension
-        let path_with_ext = if !path.to_lowercase().ends_with(".png") {
-            format!("{}.png", path)
-        } else {
-            path.to_string()
-        };
-
-        self.save_as_image(&path_with_ext, ImageFormat::Png)
-    }
-    
-    // Save the current canvas using the last save path
     fn quick_save(&mut self) -> Result<(), String> {
         if let Some(path) = &self.last_save_path {
-            let path_clone = path.clone(); // Clone the path to end the immutable borrow
-            self.save_file(&path_clone)    // Use the cloned path
+            let path_clone = path.clone();
+            self.save_file(&path_clone)
         } else {
             Err(get_text("no_previous_path", self.language))
         }
     }
 
-    // Layer management functions
     fn add_layer(&mut self, name: String) {
         self.current_state.layers.push(Layer {
             name,
@@ -770,12 +655,10 @@ impl PaintApp {
         }
     }
     
-    // Color management functions
     fn add_saved_color(&mut self, color: Color32) {
-        // Avoid duplicates
         if !self.saved_colors.contains(&color) {
             if self.saved_colors.len() >= MAX_SAVED_COLORS {
-                self.saved_colors.remove(0); // Remove oldest color
+                self.saved_colors.remove(0);
             }
             self.saved_colors.push(color);
         }
@@ -787,19 +670,6 @@ impl PaintApp {
         }
     }
     
-    fn set_primary_color_from_saved(&mut self, index: usize) {
-        if index < self.saved_colors.len() {
-            self.primary_color = self.saved_colors[index];
-        }
-    }
-    
-    fn set_secondary_color_from_saved(&mut self, index: usize) {
-        if index < self.saved_colors.len() {
-            self.secondary_color = self.saved_colors[index];
-        }
-    }
-
-    // Record a pixel change for undo/redo
     fn record_change(&mut self, x: usize, y: usize, new_color: Option<Color32>) {
         if x < self.current_state.width && y < self.current_state.height {
             let old_color = self.current_state.get_from_active_layer(x, y);
@@ -817,7 +687,6 @@ impl PaintApp {
         }
     }
 
-    // Save the current state for undo functionality
     fn save_state(&mut self) {
         if !self.current_changes.is_empty() {
             self.undo_stack.push(std::mem::take(&mut self.current_changes));
@@ -831,23 +700,20 @@ impl PaintApp {
         }
     }
 
-    // Undo the last action
     fn undo(&mut self) {
         if let Some(changes) = self.undo_stack.pop() {
             let mut redo_changes = Vec::with_capacity(changes.len());
             
-            // Apply changes in reverse
             for change in changes.iter().rev() {
                 let layer_index_backup = self.current_state.active_layer_index;
                 self.current_state.active_layer_index = change.layer_index;
                 
-                // Store the original change for redo
                 redo_changes.push(CanvasChange {
                     x: change.x,
                     y: change.y,
                     layer_index: change.layer_index,
-                    old_color: change.old_color,  // Keep the original old color
-                    new_color: change.new_color,  // Keep the original new color
+                    old_color: change.old_color,
+                    new_color: change.new_color,
                 });
                 
                 self.current_state.set(change.x, change.y, change.old_color);
@@ -860,12 +726,10 @@ impl PaintApp {
         }
     }
 
-    // Redo the last undone action
     fn redo(&mut self) {
         if let Some(changes) = self.redo_stack.pop() {
             let mut undo_changes = Vec::with_capacity(changes.len());
             
-            // Apply changes in reverse
             for change in changes.iter().rev() {
                 let layer_index_backup = self.current_state.active_layer_index;
                 self.current_state.active_layer_index = change.layer_index;
@@ -889,33 +753,27 @@ impl PaintApp {
         }
     }
 
-    // Draw a line between two points
     fn draw_line(&mut self, start: (i32, i32), end: (i32, i32), _color: Color32) {
         let color = if self.using_secondary_color { self.secondary_color } else { self.primary_color };
         
-        // Use the correct size based on the current tool
         let current_size = if self.current_tool == Tool::Eraser {
             self.eraser_size as f32
         } else {
             self.brush_size as f32
         };
         
-        // Update brush manager size if it's different
         if self.brush_manager.current_size != current_size {
             self.brush_manager.current_size = current_size;
         }
         
-        // Ensure active layer is visible before drawing
-        if self.current_state.active_layer_index < self.current_state.layers.len() && 
+        if self.current_state.active_layer_index < self.current_state.layers.len() &&
            !self.current_state.layers[self.current_state.active_layer_index].visible {
             return;
         }
         
-        // Get effective pressure
         let pressure = self.get_effective_pressure();
         let is_eraser = self.current_tool == Tool::Eraser;
         
-        // Collect changes first, then apply them
         let mut changes = Vec::new();
         {
             let mut record_change = |x: usize, y: usize, new_color: Option<Color32>| {
@@ -929,7 +787,6 @@ impl PaintApp {
             self.brush_manager.draw_line(start, end, color, pressure, &mut record_change);
         }
         
-        // Apply changes
         for (x, y, color) in changes {
             self.record_change(x, y, color);
         }
@@ -938,15 +795,12 @@ impl PaintApp {
         self.texture_dirty = true;
     }
     
-    // Draw a smooth line with anti-aliasing for improved quality
     fn draw_smooth_line(&mut self, start: (i32, i32), end: (i32, i32), _color: Color32) {
-        // Update brush manager size if it's different
         if self.brush_manager.current_size != self.brush_size as f32 {
             self.brush_manager.current_size = self.brush_size as f32;
         }
         
-        // Ensure active layer is visible before drawing
-        if self.current_state.active_layer_index < self.current_state.layers.len() && 
+        if self.current_state.active_layer_index < self.current_state.layers.len() &&
            !self.current_state.layers[self.current_state.active_layer_index].visible {
             return;
         }
@@ -954,37 +808,29 @@ impl PaintApp {
         let (x0, y0) = start;
         let (x1, y1) = end;
         
-        // Calculate distance for smooth interpolation
         let dx = (x1 - x0) as f32;
         let dy = (y1 - y0) as f32;
         let distance = (dx * dx + dy * dy).sqrt();
         
         if distance < 1.0 {
-            // Very short line, just draw one point
             self.draw_point(x0, y0, false);
             return;
         }
         
-        // Calculate spacing based on brush properties and type
         let active_brush = self.brush_manager.active_brush();
         let base_spacing = active_brush.spacing * self.brush_manager.current_size;
         
-        // Adjust spacing based on brush type for better quality
         let spacing = match active_brush.brush_type {
             brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
-                // Tighter spacing for flat brushes to ensure good coverage
                 (base_spacing * 0.2).max(0.2)
             },
             brush_system::BrushType::Rigger => {
-                // Very tight spacing for fine detail brush
                 (base_spacing * 0.1).max(0.1)
             },
             brush_system::BrushType::Fan => {
-                // Wider spacing for texture brush but still decent
                 (base_spacing * 0.6).max(0.6)
             },
             brush_system::BrushType::Mop => {
-                // Medium spacing for soft brush
                 (base_spacing * 0.3).max(0.3)
             },
             _ => {
@@ -992,18 +838,14 @@ impl PaintApp {
             }
         };
         
-        // Number of points to interpolate
         let num_points = (distance / spacing).ceil() as i32;
         
-        // Smooth interpolation using floating point
         for i in 0..=num_points {
             let t = if num_points > 0 { i as f32 / num_points as f32 } else { 0.0 };
             
-            // Linear interpolation with sub-pixel accuracy
             let x = x0 as f32 + dx * t;
             let y = y0 as f32 + dy * t;
             
-            // Draw point with anti-aliasing by drawing at fractional positions
             self.draw_smooth_point(x, y, false);
         }
         
@@ -1011,38 +853,32 @@ impl PaintApp {
         self.texture_dirty = true;
     }
     
-    // Draw a point with sub-pixel accuracy for smoother lines
     fn draw_smooth_point(&mut self, x: f32, y: f32, use_secondary: bool) {
         let color = if use_secondary { self.secondary_color } else { self.primary_color };
         
-        // Use the correct size based on the current tool
         let current_size = if self.current_tool == Tool::Eraser {
             self.eraser_size as f32
         } else {
             self.brush_size as f32
         };
         
-        // Update brush manager size if it's different
         if self.brush_manager.current_size != current_size {
             self.brush_manager.current_size = current_size;
         }
         
-        // Get the four surrounding integer positions
         let x0 = x.floor() as i32;
         let y0 = y.floor() as i32;
         let x1 = x0 + 1;
         let y1 = y0 + 1;
         
-        // Calculate sub-pixel weights
         let wx = x - x.floor();
         let wy = y - y.floor();
         
-        // Draw on the four surrounding pixels with weighted intensity
         let weights = [
-            (1.0 - wx) * (1.0 - wy), // top-left
-            wx * (1.0 - wy),         // top-right
-            (1.0 - wx) * wy,         // bottom-left
-            wx * wy,                 // bottom-right
+            (1.0 - wx) * (1.0 - wy),
+            wx * (1.0 - wy),
+            (1.0 - wx) * wy,
+            wx * wy,
         ];
         
         let positions = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)];
@@ -1060,34 +896,27 @@ impl PaintApp {
         }
     }
     
-    // Draw a point with specific weighted color for anti-aliasing
     fn draw_weighted_point(&mut self, x: i32, y: i32, weighted_color: Color32) {
-        // Use the correct size based on the current tool
         let current_size = if self.current_tool == Tool::Eraser {
             self.eraser_size as f32
         } else {
             self.brush_size as f32
         };
         
-        // Update brush manager size if it's different
         if self.brush_manager.current_size != current_size {
             self.brush_manager.current_size = current_size;
         }
         
-        // Ensure active layer is visible before drawing
-        if self.current_state.active_layer_index < self.current_state.layers.len() && 
+        if self.current_state.active_layer_index < self.current_state.layers.len() &&
            !self.current_state.layers[self.current_state.active_layer_index].visible {
             return;
         }
         
-        // Update brush angle based on position
         self.brush_manager.update_angle(x as f32, y as f32);
         
-        // Calculate mask size based on brush type and size
         let base_size = self.brush_manager.current_size;
         let active_brush = self.brush_manager.active_brush();
         
-        // Ensure consistent mask sizes for all brush types
         let mask_size = match active_brush.brush_type {
             brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
                 ((base_size * 2.0).max(7.0) as usize) | 1
@@ -1109,10 +938,8 @@ impl PaintApp {
             },
         };
         
-        // Generate brush mask
         let mask = self.brush_manager.generate_brush_mask(mask_size);
         
-        // Apply the mask
         let center = mask_size as i32 / 2;
         let width = self.current_state.width as i32;
         let height = self.current_state.height as i32;
@@ -1126,10 +953,9 @@ impl PaintApp {
                     let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
                     
                     if mask_value > 0.0 {
-                        // Calculate the final color with weighted alpha and mask
                         let final_alpha = ((weighted_color.a() as f32) * mask_value) as u8;
                         let new_color = if self.current_tool == Tool::Eraser {
-                            None // Eraser removes pixels completely
+                            None
                         } else if final_alpha > 0 {
                             Some(Color32::from_rgba_unmultiplied(
                                 weighted_color.r(), 
@@ -1150,33 +976,27 @@ impl PaintApp {
         self.texture_dirty = true;
     }
 
-    // Draw a single point with optimized circular brush
     fn draw_point(&mut self, x: i32, y: i32, _use_secondary: bool) {
         let color = if self.using_secondary_color { self.secondary_color } else { self.primary_color };
         
-        // Use the correct size based on the current tool
         let current_size = if self.current_tool == Tool::Eraser {
             self.eraser_size as f32
         } else {
             self.brush_size as f32
         };
         
-        // Update brush manager size if it's different
         if self.brush_manager.current_size != current_size {
             self.brush_manager.current_size = current_size;
         }
         
-        // Ensure active layer is visible before drawing
-        if self.current_state.active_layer_index < self.current_state.layers.len() && 
+        if self.current_state.active_layer_index < self.current_state.layers.len() &&
            !self.current_state.layers[self.current_state.active_layer_index].visible {
             return;
         }
         
-        // Get effective pressure
         let pressure = self.get_effective_pressure();
         let is_eraser = self.current_tool == Tool::Eraser;
         
-        // Collect changes first, then apply them
         let mut changes = Vec::new();
         {
             let mut record_change = |x: usize, y: usize, new_color: Option<Color32>| {
@@ -1190,7 +1010,6 @@ impl PaintApp {
             self.brush_manager.draw_point(x, y, color, pressure, &mut record_change);
         }
         
-        // Apply changes
         for (x, y, color) in changes {
             self.record_change(x, y, color);
         }
@@ -1198,37 +1017,29 @@ impl PaintApp {
         self.texture_dirty = true;
     }
     
-    // Helper function for drawing a point with a specific color
     fn draw_point_with_color(&mut self, x: i32, y: i32, fill_color: Option<Color32>) {
-        // For compatibility with existing code, we convert the optional color to a solid color
         let color = fill_color.unwrap_or(Color32::TRANSPARENT);
         
-        // Use the correct size based on the current tool
         let current_size = if self.current_tool == Tool::Eraser {
             self.eraser_size as f32
         } else {
             self.brush_size as f32
         };
         
-        // Update brush manager size if it's different
         if self.brush_manager.current_size != current_size {
             self.brush_manager.current_size = current_size;
         }
         
-        // Ensure active layer is visible before drawing
-        if self.current_state.active_layer_index < self.current_state.layers.len() && 
+        if self.current_state.active_layer_index < self.current_state.layers.len() &&
            !self.current_state.layers[self.current_state.active_layer_index].visible {
             return;
         }
         
-        // Update brush angle based on position
         self.brush_manager.update_angle(x as f32, y as f32);
         
-        // Calculate mask size based on brush type and size
         let base_size = self.brush_manager.current_size;
         let active_brush = self.brush_manager.active_brush();
         
-        // Ensure consistent mask sizes for all brush types
         let mask_size = match active_brush.brush_type {
             brush_system::BrushType::Flat | brush_system::BrushType::Bright => {
                 ((base_size * 2.0).max(7.0) as usize) | 1
@@ -1250,10 +1061,8 @@ impl PaintApp {
             },
         };
         
-        // Generate brush mask
         let mask = self.brush_manager.generate_brush_mask(mask_size);
         
-        // Apply the mask
         let center = mask_size as i32 / 2;
         let width = self.current_state.width as i32;
         let height = self.current_state.height as i32;
@@ -1267,11 +1076,9 @@ impl PaintApp {
                     let mask_value = mask[(dy as usize) * mask_size + (dx as usize)];
                     
                     if mask_value > 0.0 {
-                        // For eraser or transparent color, set to None
                         let final_color = if self.current_tool == Tool::Eraser || fill_color.is_none() {
                             None
                         } else {
-                            // Apply mask to alpha channel
                             let alpha = (color.a() as f32 * mask_value) as u8;
                             if alpha > 0 {
                                 Some(Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha))
@@ -1289,14 +1096,12 @@ impl PaintApp {
         self.texture_dirty = true;
     }
 
-    // Optimized paint bucket fill
     fn paint_bucket(&mut self, x: usize, y: usize, _use_secondary: bool) {
         if x >= self.current_state.width || y >= self.current_state.height {
             return;
         }
         
-        // Ensure active layer is visible before filling
-        if self.current_state.active_layer_index < self.current_state.layers.len() && 
+        if self.current_state.active_layer_index < self.current_state.layers.len() &&
            !self.current_state.layers[self.current_state.active_layer_index].visible {
             return;
         }
@@ -1313,7 +1118,6 @@ impl PaintApp {
             return;
         }
         
-        // Pre-allocate for better performance
         let mut queue = VecDeque::with_capacity(1024);
         let mut visited = vec![false; self.current_state.width * self.current_state.height];
         queue.push_back((x, y));
@@ -1327,7 +1131,6 @@ impl PaintApp {
             visited[idx] = true;
             self.record_change(cx, cy, fill_color);
             
-            // Add adjacent pixels to queue
             if cx > 0 { queue.push_back((cx - 1, cy)); }
             if cx + 1 < self.current_state.width { queue.push_back((cx + 1, cy)); }
             if cy > 0 { queue.push_back((cx, cy - 1)); }
@@ -1338,7 +1141,6 @@ impl PaintApp {
         self.texture_dirty = true;
     }
 
-    // Pick a color from the canvas
     fn pick_color(&mut self, x: usize, y: usize, _use_secondary: bool) {
         if let Some(color) = self.current_state.get(x, y) {
             if self.using_secondary_color {
@@ -1349,16 +1151,13 @@ impl PaintApp {
         }
     }
 
-    // Optimized texture update
     fn update_texture(&mut self, ctx: &egui::Context) {
         if self.texture_dirty {
             let width = self.current_state.width;
             let height = self.current_state.height;
             
-            // Create the image data
             let mut image_data = vec![0_u8; width * height * 4];
             
-            // Process all pixels
             for y in 0..height {
                 for x in 0..width {
                     let color = if let Some(pixel) = self.current_state.get(x, y) {
@@ -1388,20 +1187,17 @@ impl PaintApp {
         }
     }
     
-    // Show save dialog
     fn show_save_dialog(&mut self, return_to_menu: bool) {
         self.save_dialog = SaveDialog::AskingSave { 
             return_to_menu
         };
     }
     
-    // Set language
     fn set_language(&mut self, language: Language) {
         self.language = language;
     }
 }
 
-// Action à effectuer après fermeture de dialogues
 enum PendingAction {
     None,
     ReturnToMenu,
@@ -1410,19 +1206,16 @@ enum PendingAction {
     RedoAction,
 }
 
-// Action à effectuer sur les calques
 enum LayerAction {
     ToggleVisibility(usize),
     SetActive(usize),
     Edit(usize),
 }
 
-// Main application struct
 struct MyApp {
     state: AppState,
     error_message: Option<String>,
     show_error: bool,
-    new_layer_name: String,
     rename_layer_index: Option<usize>,
     rename_layer_name: String,
     pending_action: PendingAction,
@@ -1435,7 +1228,6 @@ impl Default for MyApp {
             state: AppState::MainMenu(MainMenu::new(Language::French)),
             error_message: None,
             show_error: false,
-            new_layer_name: "New Layer".to_string(),
             rename_layer_index: None,
             rename_layer_name: String::new(),
             pending_action: PendingAction::None,
@@ -1448,11 +1240,9 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         RustiqueTheme::apply_theme(ctx);
         
-        // Process keyboard shortcuts
         let ctrl = ctx.input(|i| i.modifiers.ctrl);
         let shift = ctx.input(|i| i.modifiers.shift);
         
-        // Show error message dialog if needed
         if self.show_error {
             egui::Window::new(get_text("error", self.language))
                 .collapsible(false)
@@ -1465,7 +1255,6 @@ impl eframe::App for MyApp {
                 });
         }
         
-        // Process rename layer dialog
         if let Some(layer_idx) = self.rename_layer_index {
             egui::Window::new(get_text("rename_layer", self.language))
                 .collapsible(false)
@@ -1486,7 +1275,6 @@ impl eframe::App for MyApp {
                 });
         }
         
-        // Process pending actions
         match &self.pending_action {
             PendingAction::ReturnToMenu => {
                 self.state = AppState::MainMenu(MainMenu::new(self.language));
@@ -1569,7 +1357,6 @@ impl eframe::App for MyApp {
                 }
             }
             AppState::Canvas(paint_app) => {
-                // Handle keyboard shortcuts
                 if ctrl {
                     if ctx.input(|i| i.key_pressed(egui::Key::Z)) && !shift {
                         self.pending_action = PendingAction::UndoAction;
@@ -1588,7 +1375,6 @@ impl eframe::App for MyApp {
                                 }
                             }
                         } else {
-                            // Show save dialog
                             if let Some(path) = FileDialog::new()
                                 .add_filter("All Supported Files", &["png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp", "rustiq"])
                                 .add_filter("PNG Image", &["png"])
@@ -1612,7 +1398,6 @@ impl eframe::App for MyApp {
                     }
                 }
                 
-                // Handle save dialog
                 match &mut paint_app.save_dialog {
                     SaveDialog::Hidden => {},
                     SaveDialog::AskingSave { return_to_menu } => {
@@ -1624,7 +1409,6 @@ impl eframe::App for MyApp {
                                 ui.label(get_text("want_to_save_changes", self.language));
                                 ui.horizontal(|ui| {
                                     if ui.button(get_text("yes", self.language)).clicked() {
-                                        // Open save dialog
                                         let result = if let Some(path) = FileDialog::new()
                                             .add_filter("All Supported Files", &["png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp", "rustiq"])
                                             .add_filter("PNG Image", &["png"])
@@ -1638,7 +1422,6 @@ impl eframe::App for MyApp {
                                             .save_file() {
                                             paint_app.save_file(path.to_str().unwrap())
                                         } else {
-                                            // User canceled the save dialog
                                             Ok(())
                                         };
                                         
@@ -2025,7 +1808,6 @@ impl eframe::App for MyApp {
                                 ui.label(RustiqueTheme::heading_text(&get_text("properties", self.language), 16.0));
                                 ui.add_space(RustiqueTheme::SPACING_SM);
                                 
-                                // Utiliser ScrollArea pour permettre le défilement
                                 egui::ScrollArea::vertical()
                                     .auto_shrink([false; 2])
                                     .show(ui, |ui| {
@@ -2116,7 +1898,6 @@ impl eframe::App for MyApp {
                                                     ui.horizontal(|ui| {
                                                         ui.label(RustiqueTheme::muted_text(&format!("{}: {:.2}", get_text("current", self.language), paint_app.current_pressure)));
                                                         
-                                                        // Pressure indicator bar
                                                         let bar_rect = ui.allocate_space(egui::Vec2::new(100.0, 10.0)).1;
                                                         ui.painter().rect_filled(bar_rect, 2.0, egui::Color32::DARK_GRAY);
                                                         let fill_width = bar_rect.width() * paint_app.current_pressure;
@@ -2125,16 +1906,15 @@ impl eframe::App for MyApp {
                                                             egui::Vec2::new(fill_width, bar_rect.height())
                                                         );
                                                         let color = if paint_app.current_pressure < 0.5 {
-                                                            egui::Color32::from_rgb(255, 100, 100) // Red for low pressure
+                                                            egui::Color32::from_rgb(255, 100, 100)
                                                         } else {
-                                                            egui::Color32::from_rgb(100, 255, 100) // Green for high pressure
+                                                            egui::Color32::from_rgb(100, 255, 100)
                                                         };
                                                         ui.painter().rect_filled(fill_rect, 2.0, color);
                                                     });
                                                     
                                                     ui.add_space(RustiqueTheme::SPACING_XS);
                                                     
-                                                    // Brush pressure settings
                                                     let active_brush = paint_app.brush_manager.active_brush_mut();
                                                     
                                                     ui.horizontal(|ui| {
@@ -2356,7 +2136,6 @@ impl eframe::App for MyApp {
                         (undo_clicked, redo_clicked, return_clicked)
                     }).inner;
                 
-                // Handle button actions outside of the panel to avoid borrow issues
                 if undo_clicked {
                     self.pending_action = PendingAction::UndoAction;
                 }
@@ -2365,7 +2144,6 @@ impl eframe::App for MyApp {
                     self.pending_action = PendingAction::RedoAction;
                 }
                 
-                // Handle the return to menu request after all panels to avoid borrowing issues
                 if return_to_menu_clicked {
                     if paint_app.has_unsaved_changes {
                         paint_app.show_save_dialog(true);
@@ -2396,14 +2174,11 @@ impl eframe::App for MyApp {
                         Rect::from_min_size(Pos2::ZERO, Vec2::new(canvas_width, canvas_height)),
                     );
 
-                    // Improved panning with middle button
                     if response.dragged_by(egui::PointerButton::Middle) {
                         paint_app.pan += response.drag_delta();
                     }
 
-                    // Handle line tool
                     if paint_app.current_tool == Tool::Line {
-                        // First click sets the start point, second click sets the endpoint and draws the line
                         if response.clicked() && !response.clicked_by(egui::PointerButton::Middle) {
                             let is_secondary = response.clicked_by(egui::PointerButton::Secondary);
                             if let Some(pos) = response.interact_pointer_pos() {
@@ -2412,13 +2187,11 @@ impl eframe::App for MyApp {
                                 let y = canvas_pos.y as i32;
                                 
                                 if paint_app.is_first_click_line {
-                                    // First click: set start point
                                     paint_app.line_start = Some((x, y));
                                     paint_app.line_end = Some((x, y));
                                     paint_app.is_drawing_line = true;
                                     paint_app.is_first_click_line = false;
                                 } else {
-                                    // Second click: draw the line
                                     if let (Some(start), Some(_)) = (paint_app.line_start, paint_app.line_end) {
                                         let color = if is_secondary { paint_app.secondary_color } else { paint_app.primary_color };
                                         paint_app.draw_line(start, (x, y), color);
@@ -2432,13 +2205,11 @@ impl eframe::App for MyApp {
                             }
                         }
                         
-                        // Update preview line when moving the mouse
                         if paint_app.is_drawing_line && !paint_app.is_first_click_line {
                             if let Some(pos) = response.hover_pos() {
                                 let canvas_pos = to_canvas.transform_pos(pos);
                                 paint_app.line_end = Some((canvas_pos.x as i32, canvas_pos.y as i32));
                                 
-                                // Draw the preview line
                                 if let (Some(start), Some(end)) = (paint_app.line_start, paint_app.line_end) {
                                     let start_pos = Pos2::new(
                                         start.0 as f32 * canvas_rect.width() / canvas_width + canvas_rect.min.x,
@@ -2449,7 +2220,6 @@ impl eframe::App for MyApp {
                                         end.1 as f32 * canvas_rect.height() / canvas_height + canvas_rect.min.y
                                     );
                                     
-                                    // Use the right mouse button state to determine color
                                     let is_secondary = response.ctx.input(|i| i.pointer.button_down(egui::PointerButton::Secondary));
                                     let color = if is_secondary { paint_app.secondary_color } else { paint_app.primary_color };
                                     let size = paint_app.brush_size as f32;
@@ -2459,7 +2229,6 @@ impl eframe::App for MyApp {
                             }
                         }
                         
-                        // Cancel the line by pressing the middle mouse button
                         if response.clicked_by(egui::PointerButton::Middle) {
                             paint_app.is_drawing_line = false;
                             paint_app.line_start = None;
@@ -2467,7 +2236,6 @@ impl eframe::App for MyApp {
                             paint_app.is_first_click_line = true;
                         }
                         
-                        // Also allow Escape key to cancel
                         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
                             paint_app.is_drawing_line = false;
                             paint_app.line_start = None;
@@ -2475,8 +2243,7 @@ impl eframe::App for MyApp {
                             paint_app.is_first_click_line = true;
                         }
                     } else {
-                        // Handle other tools with left/right mouse buttons
-                        if (response.clicked_by(egui::PointerButton::Primary) || 
+                        if (response.clicked_by(egui::PointerButton::Primary) ||
                             response.clicked_by(egui::PointerButton::Secondary)) && 
                            !response.clicked_by(egui::PointerButton::Middle) {
                             paint_app.is_drawing = true;
@@ -2487,7 +2254,7 @@ impl eframe::App for MyApp {
                            !(response.dragged_by(egui::PointerButton::Middle) || 
                              response.clicked_by(egui::PointerButton::Middle)) {
                             if let Some(pos) = response.interact_pointer_pos() {
-                                // Calculate pressure based on cursor velocity
+                                
                                 let current_time = response.ctx.input(|i| i.time);
                                 paint_app.update_pressure_from_velocity(pos, current_time);
                                 
@@ -2519,13 +2286,11 @@ impl eframe::App for MyApp {
                         } else {
                             paint_app.save_state();
                             paint_app.last_position = None;
-                            // Reset cursor tracking for pressure calculation
                             paint_app.last_cursor_pos = None;
                             paint_app.last_cursor_time = None;
                         }
                     }
 
-                    // Improved zooming with mouse wheel
                     let delta = ui.input(|i| i.scroll_delta.y);
                     if delta != 0.0 {
                         let zoom_speed = 0.001;
@@ -2533,7 +2298,6 @@ impl eframe::App for MyApp {
                         paint_app.zoom *= 1.0 + delta * zoom_speed;
                         paint_app.zoom = paint_app.zoom.clamp(0.1, 10.0);
                         
-                        // Zoom toward mouse cursor position
                         if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
                             let center = ui.available_rect_before_wrap().center();
                             let mouse_offset = mouse_pos - center - paint_app.pan;
@@ -2547,7 +2311,6 @@ impl eframe::App for MyApp {
     }
 }
 
-// Load application icon from PNG file
 fn load_app_icon() -> Option<eframe::IconData> {
     let icon_path = "rustique_icon.png";
     

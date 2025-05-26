@@ -161,7 +161,6 @@ impl ToolIcons {
         IconWidget::new("layer_edit", "✏️", Vec2::new(16.0, 16.0))
     }
 
-    // Méthodes de compatibilité qui retournent RichText pour éviter de casser le code existant
     pub fn brush_text() -> RichText {
         RichText::new("🖌️").size(20.0)
     }

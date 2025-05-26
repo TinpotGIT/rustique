@@ -122,7 +122,7 @@ impl MainMenu {
         result
     }
     
-    fn show_tablet_layout(&mut self, ui: &mut egui::Ui, screen_rect: Rect) -> Option<MenuResult> {
+    fn show_tablet_layout(&mut self, ui: &mut egui::Ui, _screen_rect: Rect) -> Option<MenuResult> {
         let mut result = None;
         
         egui::ScrollArea::vertical()
@@ -152,7 +152,7 @@ impl MainMenu {
         result
     }
     
-    fn show_desktop_layout(&mut self, ui: &mut egui::Ui, screen_rect: Rect) -> Option<MenuResult> {
+    fn show_desktop_layout(&mut self, ui: &mut egui::Ui, _screen_rect: Rect) -> Option<MenuResult> {
         let mut result = None;
         
         egui::ScrollArea::vertical()
@@ -574,7 +574,7 @@ impl MainMenu {
         );
     }
     
-    fn draw_preset_buttons_tablet(&mut self, ui: &mut egui::Ui, panel_width: f32) {
+    fn draw_preset_buttons_tablet(&mut self, ui: &mut egui::Ui, _panel_width: f32) {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             let preset_width = 70.0;
             let spacing = 10.0;
