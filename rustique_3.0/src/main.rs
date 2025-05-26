@@ -1677,7 +1677,7 @@ impl eframe::App for MyApp {
                     .show(ctx, |ui| {
                         RustiqueTheme::panel_frame().show(ui, |ui| {
                             ui.vertical(|ui| {
-                                ui.label(RustiqueTheme::heading_text("Layers", 16.0));
+                                ui.label(RustiqueTheme::heading_text(&get_text("layers", self.language), 16.0));
                                 ui.add_space(RustiqueTheme::SPACING_SM);
                                 
                                 ui.horizontal(|ui| {
@@ -2022,7 +2022,7 @@ impl eframe::App for MyApp {
                     .show(ctx, |ui| {
                         RustiqueTheme::panel_frame().show(ui, |ui| {
                             ui.vertical(|ui| {
-                                ui.label(RustiqueTheme::heading_text("Properties", 16.0));
+                                ui.label(RustiqueTheme::heading_text(&get_text("properties", self.language), 16.0));
                                 ui.add_space(RustiqueTheme::SPACING_SM);
                                 
                                 // Utiliser ScrollArea pour permettre le défilement
@@ -2031,7 +2031,7 @@ impl eframe::App for MyApp {
                                     .show(ui, |ui| {
                                         RustiqueTheme::card_frame().show(ui, |ui| {
                                             ui.vertical(|ui| {
-                                                ui.label(RustiqueTheme::body_text("Brush System"));
+                                                ui.label(RustiqueTheme::body_text(&get_text("brush_system", self.language)));
                                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                                 
                                                 if paint_app.brush_manager.brush_selector_grid(ui, ctx, self.language) {
@@ -2044,11 +2044,11 @@ impl eframe::App for MyApp {
                                         
                                         RustiqueTheme::card_frame().show(ui, |ui| {
                                             ui.vertical(|ui| {
-                                                ui.label(RustiqueTheme::body_text("Tool Settings"));
+                                                ui.label(RustiqueTheme::body_text(&get_text("tool_settings", self.language)));
                                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                                 
                                                 ui.horizontal(|ui| {
-                                                    ui.label(RustiqueTheme::muted_text("Brush Size:"));
+                                                    ui.label(RustiqueTheme::muted_text(&get_text("brush_size", self.language)));
                                                     ui.add(egui::DragValue::new(&mut paint_app.brush_size)
                                                         .speed(0.1)
                                                         .clamp_range(1..=500)
@@ -2058,7 +2058,7 @@ impl eframe::App for MyApp {
                                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                                 
                                                 ui.horizontal(|ui| {
-                                                    ui.label(RustiqueTheme::muted_text("Eraser Size:"));
+                                                    ui.label(RustiqueTheme::muted_text(&get_text("eraser_size", self.language)));
                                                     ui.add(egui::DragValue::new(&mut paint_app.eraser_size)
                                                         .speed(0.1)
                                                         .clamp_range(1..=500)
@@ -2068,7 +2068,7 @@ impl eframe::App for MyApp {
                                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                                 
                                                 ui.horizontal(|ui| {
-                                                    ui.label(RustiqueTheme::muted_text("Zoom:"));
+                                                    ui.label(RustiqueTheme::muted_text(&get_text("zoom", self.language)));
                                                     ui.add(egui::Slider::new(&mut paint_app.zoom, 0.1..=10.0)
                                                         .logarithmic(true)
                                                         .suffix("x"));
@@ -2078,19 +2078,19 @@ impl eframe::App for MyApp {
                                                 ui.separator();
                                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                                 
-                                                ui.label(RustiqueTheme::body_text("Pressure Settings"));
+                                                ui.label(RustiqueTheme::body_text(&get_text("pressure_settings", self.language)));
                                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                                 
                                                 ui.horizontal(|ui| {
                                                     ui.checkbox(&mut paint_app.pressure_enabled, 
-                                                               RustiqueTheme::muted_text("Enable Pressure"));
+                                                               &get_text("enable_pressure", self.language));
                                                 });
                                                 
                                                 if paint_app.pressure_enabled {
                                                     ui.add_space(RustiqueTheme::SPACING_XS);
                                                     
                                                     ui.horizontal(|ui| {
-                                                        ui.label(RustiqueTheme::muted_text("Smoothing:"));
+                                                        ui.label(RustiqueTheme::muted_text(&format!("{}:", get_text("smoothing", self.language))));
                                                         ui.add(egui::Slider::new(&mut paint_app.pressure_smoothing, 0.0..=1.0)
                                                             .suffix("%"));
                                                     });
@@ -2098,7 +2098,7 @@ impl eframe::App for MyApp {
                                                     ui.add_space(RustiqueTheme::SPACING_XS);
                                                     
                                                     ui.horizontal(|ui| {
-                                                        ui.label(RustiqueTheme::muted_text("Velocity Sensitivity:"));
+                                                        ui.label(RustiqueTheme::muted_text(&format!("{}:", get_text("velocity_sensitivity", self.language))));
                                                         ui.add(egui::Slider::new(&mut paint_app.velocity_sensitivity, 0.0..=1.0)
                                                             .suffix("%"));
                                                     });
@@ -2106,7 +2106,7 @@ impl eframe::App for MyApp {
                                                     ui.add_space(RustiqueTheme::SPACING_XS);
                                                     
                                                     ui.horizontal(|ui| {
-                                                        ui.label(RustiqueTheme::muted_text("Max Velocity:"));
+                                                        ui.label(RustiqueTheme::muted_text(&format!("{}:", get_text("max_velocity", self.language))));
                                                         ui.add(egui::Slider::new(&mut paint_app.max_velocity_for_min_pressure, 100.0..=2000.0)
                                                             .suffix("px/s"));
                                                     });
@@ -2114,7 +2114,7 @@ impl eframe::App for MyApp {
                                                     ui.add_space(RustiqueTheme::SPACING_XS);
                                                     
                                                     ui.horizontal(|ui| {
-                                                        ui.label(RustiqueTheme::muted_text(&format!("Current: {:.2}", paint_app.current_pressure)));
+                                                        ui.label(RustiqueTheme::muted_text(&format!("{}: {:.2}", get_text("current", self.language), paint_app.current_pressure)));
                                                         
                                                         // Pressure indicator bar
                                                         let bar_rect = ui.allocate_space(egui::Vec2::new(100.0, 10.0)).1;
@@ -2139,12 +2139,12 @@ impl eframe::App for MyApp {
                                                     
                                                     ui.horizontal(|ui| {
                                                         ui.checkbox(&mut active_brush.pressure_affects_size, 
-                                                                   RustiqueTheme::muted_text("Affects Size"));
+                                                                   &get_text("affects_size", self.language));
                                                     });
                                                     
                                                     if active_brush.pressure_affects_size {
                                                         ui.horizontal(|ui| {
-                                                            ui.label(RustiqueTheme::muted_text("Min Size:"));
+                                                            ui.label(RustiqueTheme::muted_text(&format!("{}:", get_text("min_size", self.language))));
                                                             ui.add(egui::Slider::new(&mut active_brush.pressure_size_min, 0.1..=1.0)
                                                                 .suffix("%"));
                                                         });
@@ -2152,12 +2152,12 @@ impl eframe::App for MyApp {
                                                     
                                                     ui.horizontal(|ui| {
                                                         ui.checkbox(&mut active_brush.pressure_affects_opacity, 
-                                                                   RustiqueTheme::muted_text("Affects Opacity"));
+                                                                   &get_text("affects_opacity", self.language));
                                                     });
                                                     
                                                     if active_brush.pressure_affects_opacity {
                                                         ui.horizontal(|ui| {
-                                                            ui.label(RustiqueTheme::muted_text("Min Opacity:"));
+                                                            ui.label(RustiqueTheme::muted_text(&format!("{}:", get_text("min_opacity", self.language))));
                                                             ui.add(egui::Slider::new(&mut active_brush.pressure_opacity_min, 0.0..=1.0)
                                                                 .suffix("%"));
                                                         });
@@ -2170,11 +2170,11 @@ impl eframe::App for MyApp {
                                         
                                         RustiqueTheme::card_frame().show(ui, |ui| {
                                             ui.vertical(|ui| {
-                                                ui.label(RustiqueTheme::body_text("Colors"));
+                                                ui.label(RustiqueTheme::body_text(&get_text("colors", self.language)));
                                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                                 
                                                 ui.horizontal(|ui| {
-                                                    ui.label(RustiqueTheme::muted_text("Primary:"));
+                                                    ui.label(RustiqueTheme::muted_text(&get_text("primary", self.language)));
                                                     ui.color_edit_button_srgba(&mut paint_app.primary_color);
                                                     let add_primary_btn = ui.add(
                                                         egui::Button::new("")
@@ -2191,7 +2191,7 @@ impl eframe::App for MyApp {
                                                 ui.add_space(RustiqueTheme::SPACING_XS);
                                                 
                                                 ui.horizontal(|ui| {
-                                                    ui.label(RustiqueTheme::muted_text("Secondary:"));
+                                                    ui.label(RustiqueTheme::muted_text(&get_text("secondary", self.language)));
                                                     ui.color_edit_button_srgba(&mut paint_app.secondary_color);
                                                     let add_secondary_btn = ui.add(
                                                         egui::Button::new("")
@@ -2212,7 +2212,7 @@ impl eframe::App for MyApp {
                                             
                                             RustiqueTheme::card_frame().show(ui, |ui| {
                                                 ui.vertical(|ui| {
-                                                    ui.label(RustiqueTheme::body_text("Saved Colors"));
+                                                    ui.label(RustiqueTheme::body_text(&get_text("saved_colors", self.language)));
                                                     ui.add_space(RustiqueTheme::SPACING_XS);
                                                     
                                                     let available_width = ui.available_width();

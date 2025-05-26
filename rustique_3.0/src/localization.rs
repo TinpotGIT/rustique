@@ -17,6 +17,10 @@ fn get_french_text(key: &str) -> String {
     let translations: HashMap<&str, &str> = [
         // Menu principal
         ("language", "Langue"),
+        ("new_file", "Nouveau Fichier"),
+        ("open_project", "Ouvrir Projet"), 
+        ("canvas_settings", "Paramètres du canevas"),
+        ("modern_paint_application", "Application de peinture moderne"),
         ("canvas_dimensions", "Dimensions du canevas"),
         ("width", "Largeur:"),
         ("height", "Hauteur:"),
@@ -87,7 +91,21 @@ fn get_french_text(key: &str) -> String {
         ("error_saving_png", "Erreur lors de la sauvegarde PNG"),
         ("error_saving_image", "Erreur lors de la sauvegarde de l'image"),
         
-        // Système de pinceaux
+        // Interface de peinture
+        ("properties", "Propriétés"),
+        ("brush_system", "Système de pinceaux"),
+        ("tool_settings", "Paramètres d'outils"),
+        ("pressure_settings", "Paramètres de pression"),
+        ("enable_pressure", "Activer la pression"),
+        ("smoothing", "Lissage"),
+        ("velocity_sensitivity", "Sensibilité de vélocité"),
+        ("max_velocity", "Vélocité maximale"),
+        ("current", "Actuel"),
+        ("affects_size", "Affecte la taille"),
+        ("min_size", "Taille minimale"),
+        ("affects_opacity", "Affecte l'opacité"),
+        ("min_opacity", "Opacité minimale"),
+        ("zoom", "Zoom :"),
         ("brush_selection", "Sélection du pinceau"),
         ("select_brush", "Sélectionner un pinceau"),
         ("brush_round", "Rond"),
@@ -112,6 +130,10 @@ fn get_english_text(key: &str) -> String {
     let translations: HashMap<&str, &str> = [
         // Main menu
         ("language", "Language"),
+        ("new_file", "New File"),
+        ("open_project", "Open Project"),
+        ("canvas_settings", "Canvas Settings"),
+        ("modern_paint_application", "Modern Paint Application"),
         ("canvas_dimensions", "Canvas Dimensions"),
         ("width", "Width:"),
         ("height", "Height:"),
@@ -182,7 +204,21 @@ fn get_english_text(key: &str) -> String {
         ("error_saving_png", "Error saving PNG"),
         ("error_saving_image", "Error saving image"),
         
-        // Brush system
+        // Painting interface
+        ("properties", "Properties"),
+        ("brush_system", "Brush System"),
+        ("tool_settings", "Tool Settings"),
+        ("pressure_settings", "Pressure Settings"),
+        ("enable_pressure", "Enable Pressure"),
+        ("smoothing", "Smoothing"),
+        ("velocity_sensitivity", "Velocity Sensitivity"),
+        ("max_velocity", "Max Velocity"),
+        ("current", "Current"),
+        ("affects_size", "Affects Size"),
+        ("min_size", "Min Size"),
+        ("affects_opacity", "Affects Opacity"),
+        ("min_opacity", "Min Opacity"),
+        ("zoom", "Zoom:"),
         ("brush_selection", "Brush Selection"),
         ("select_brush", "Select Brush"),
         ("brush_round", "Round"),

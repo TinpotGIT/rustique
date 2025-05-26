@@ -1,6 +1,6 @@
 use eframe::egui;
 use egui::{Color32, Vec2, RichText, Pos2, Rect, Stroke, TextureHandle, TextureOptions};
-use crate::localization::Language;
+use crate::localization::{Language, get_text};
 use crate::ui_theme::RustiqueTheme;
 
 pub enum MenuAction {
@@ -196,7 +196,7 @@ impl MainMenu {
             );
             ui.add_space(5.0);
             ui.label(
-                RichText::new("Paint App")
+                RichText::new(get_text("modern_paint_application", self.language))
                     .size(14.0)
                     .color(Color32::from_gray(200))
             );
@@ -217,7 +217,7 @@ impl MainMenu {
             );
             ui.add_space(6.0);
             ui.label(
-                RichText::new("Modern Paint Application")
+                RichText::new(get_text("modern_paint_application", self.language))
                     .size(16.0)
                     .color(Color32::from_gray(200))
             );
@@ -231,7 +231,7 @@ impl MainMenu {
         
         if ui.add(
             egui::Button::new(
-                RichText::new("📄 New File")
+                RichText::new(&format!("📄 {}", get_text("new_file", self.language)))
                     .size(16.0)
                     .color(Color32::WHITE)
                     .strong()
@@ -248,7 +248,7 @@ impl MainMenu {
         
         if ui.add(
             egui::Button::new(
-                RichText::new("📂 Open Project")
+                RichText::new(&format!("📂 {}", get_text("open_project", self.language)))
                     .size(16.0)
                     .color(RustiqueTheme::TEXT_PRIMARY)
                     .strong()
@@ -280,7 +280,7 @@ impl MainMenu {
             
             if ui.add(
                 egui::Button::new(
-                    RichText::new("📄 New File")
+                    RichText::new(&format!("📄 {}", get_text("new_file", self.language)))
                         .size(15.0)
                         .color(Color32::WHITE)
                         .strong()
@@ -297,7 +297,7 @@ impl MainMenu {
             
             if ui.add(
                 egui::Button::new(
-                    RichText::new("📂 Open Project")
+                    RichText::new(&format!("📂 {}", get_text("open_project", self.language)))
                         .size(15.0)
                         .color(RustiqueTheme::TEXT_PRIMARY)
                         .strong()
@@ -331,7 +331,7 @@ impl MainMenu {
                 ui.add_space(15.0);
                 
                 ui.label(
-                    RichText::new("Canvas Settings")
+                    RichText::new(get_text("canvas_settings", self.language))
                         .size(18.0)
                         .color(Color32::WHITE)
                         .strong()
@@ -340,13 +340,11 @@ impl MainMenu {
                 ui.add_space(20.0);
                 
                 ui.vertical_centered(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new("Size:")
-                                .size(14.0)
-                                .color(Color32::from_gray(220))
-                        );
-                    });
+                    ui.label(
+                        RichText::new(&format!("{}:", get_text("canvas_dimensions", self.language)))
+                            .size(14.0)
+                            .color(Color32::from_gray(220))
+                    );
                     
                     ui.add_space(10.0);
                     
@@ -383,7 +381,7 @@ impl MainMenu {
                     let button_width = panel_width * 0.8;
                     if ui.add(
                         egui::Button::new(
-                            RichText::new("🎨 Create Canvas")
+                            RichText::new(&format!("🎨 {}", get_text("create_new_canvas", self.language)))
                                 .size(16.0)
                                 .color(Color32::WHITE)
                                 .strong()
@@ -496,7 +494,7 @@ impl MainMenu {
                 ui.add_space(18.0);
                 
                 ui.label(
-                    RichText::new("Canvas Settings")
+                    RichText::new(get_text("canvas_settings", self.language))
                         .size(19.0)
                         .color(Color32::WHITE)
                         .strong()
@@ -514,7 +512,7 @@ impl MainMenu {
                     }
                     
                     ui.label(
-                        RichText::new("Size:")
+                        RichText::new(&format!("{}:", get_text("canvas_dimensions", self.language)))
                             .size(14.0)
                             .color(Color32::from_gray(220))
                     );
@@ -557,7 +555,7 @@ impl MainMenu {
                 ui.vertical_centered(|ui| {
                     if ui.add(
                         egui::Button::new(
-                            RichText::new("🎨 Create Canvas")
+                            RichText::new(&format!("🎨 {}", get_text("create_new_canvas", self.language)))
                                 .size(17.0)
                                 .color(Color32::WHITE)
                                 .strong()
@@ -664,7 +662,7 @@ impl MainMenu {
         
         ui.vertical_centered(|ui| {
             ui.label(
-                RichText::new("Language:")
+                RichText::new(&format!("{}:", get_text("language", self.language)))
                     .size(14.0)
                     .color(Color32::from_gray(180))
             );
@@ -716,7 +714,7 @@ impl MainMenu {
             }
             
             ui.label(
-                RichText::new("Language:")
+                RichText::new(&format!("{}:", get_text("language", self.language)))
                     .size(14.0)
                     .color(Color32::from_gray(180))
             );
@@ -807,7 +805,7 @@ impl MainMenu {
             );
             ui.add_space(8.0);
             ui.label(
-                RichText::new("Modern Paint Application")
+                RichText::new(get_text("modern_paint_application", self.language))
                     .size(18.0)
                     .color(Color32::from_gray(200))
             );
@@ -828,7 +826,7 @@ impl MainMenu {
             
             if ui.add(
                 egui::Button::new(
-                    RichText::new("📄 New File")
+                    RichText::new(&format!("📄 {}", get_text("new_file", self.language)))
                         .size(16.0)
                         .color(Color32::WHITE)
                         .strong()
@@ -845,7 +843,7 @@ impl MainMenu {
             
             if ui.add(
                 egui::Button::new(
-                    RichText::new("📂 Open Project")
+                    RichText::new(&format!("📂 {}", get_text("open_project", self.language)))
                         .size(16.0)
                         .color(RustiqueTheme::TEXT_PRIMARY)
                         .strong()
@@ -877,7 +875,7 @@ impl MainMenu {
                 ui.add_space(20.0);
                 
                 ui.label(
-                    RichText::new("Canvas Settings")
+                    RichText::new(get_text("canvas_settings", self.language))
                         .size(20.0)
                         .color(Color32::WHITE)
                         .strong()
@@ -893,7 +891,7 @@ impl MainMenu {
                     ui.add_space(padding.max(0.0));
                     
                     ui.label(
-                        RichText::new("Size:")
+                        RichText::new(&format!("{}:", get_text("canvas_dimensions", self.language)))
                             .size(14.0)
                             .color(Color32::from_gray(220))
                     );
@@ -1013,7 +1011,7 @@ impl MainMenu {
                 ui.vertical_centered(|ui| {
                     if ui.add(
                         egui::Button::new(
-                            RichText::new("🎨 Create Canvas")
+                            RichText::new(&format!("🎨 {}", get_text("create_new_canvas", self.language)))
                                 .size(18.0)
                                 .color(Color32::WHITE)
                                 .strong()
@@ -1037,7 +1035,7 @@ impl MainMenu {
         
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new("Language:")
+                RichText::new(&format!("{}:", get_text("language", self.language)))
                     .size(14.0)
                     .color(Color32::from_gray(180))
             );
